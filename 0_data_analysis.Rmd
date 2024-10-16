@@ -1,0 +1,35 @@
+---
+title: "Stroke Data Analysis"
+author: "George Melrose"
+date: "`r Sys.Date()`"
+output: 
+ html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+
+rm(list = ls())
+
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
+
+pacman::p_load(tidyverse,icd,knitr,kableExtra,finalfit,lubridate,data.table,
+               janitor,flextable,survival,survminer,cmprsk,rmdHelpers, ggrepel,
+               scales,RColorBrewer,GGally,randomForest, caret)
+
+```
+
+
+```{r loading in data}
+stroke_data <- read_csv("healthcare-dataset-stroke-data.csv.csv")
+```
+
+
+```{r formatting variables}
+print(nrow(stroke_data))
+
+
+```
+
