@@ -21,15 +21,136 @@ pacman::p_load(tidyverse,icd,knitr,kableExtra,finalfit,lubridate,data.table,
 
 ```
 
+## Formatting Data
 
 ```{r loading in data}
 stroke_data <- read_csv("healthcare-dataset-stroke-data.csv.csv")
 ```
 
 
-```{r formatting variables}
-print(nrow(stroke_data))
+```{r removing children from the dataset and format binary variables}
 
+#Removing children as lifestyle factors will be far less connected to pediatric stroke - https://www.stroke.org.uk/stroke/childhood/about #
+
+#No.rows with children#
+print(paste("The number of rows of the data with children included -", nrow(stroke_data)))
+
+#Removing children by filtering out all rows with age<18#
+children <- stroke_data %>% filter(age < 18)
+
+print(paste("The number of rows of the data that are children (age<18) -", nrow(children)))
+
+stroke_data <- stroke_data %>% filter(age >= 18)
+
+print(paste("The number of rows of the data without children included -", nrow(stroke_data)))
+
+#Creating yes/no (yn) versions of the binary outcome variables#
+stroke_data$hypertension_yn <- as.factor(ifelse(stroke_data$hypertension == 1, "Yes", "No"))
+stroke_data$heart_disease_yn <- as.factor(ifelse(stroke_data$heart_disease == 1, "Yes", "No"))
+stroke_data$stroke_yn <- as.factor(ifelse(stroke_data$stroke == 1, "Yes", "No"))
+
+#re-leveling above yn variables to have "No" as the default and adding ff_label command for cleaner formatting in finalfit plots#
+
+stroke_data <- stroke_data %>% mutate(
+  hypertension_yn = relevel(factor(hypertension_yn), ref = "No") %>% 
+    ff_label("Hypertension (Yes/No)"),
+  
+  heart_disease_yn = relevel(factor(heart_disease_yn), ref = "No") %>% 
+    ff_label("Heart Disease (Yes/No)"),
+  
+  stroke_yn = relevel(factor(stroke_yn), ref = "No") %>% 
+    ff_label("Stroke (Yes/No)")
+)
+
+```
+```{r making categorical variables of numeric variables}
+
+stroke_data <- stroke_data %>% mutate(
+  # Create age categories
+  age_category = case_when(
+    age < 18 ~ "<18",
+    age >= 18 & age <= 35 ~ "18-35",
+    age > 35 & age <= 60 ~ "36-60",
+    age > 60 ~ ">60"
+  ) %>% factor(levels = c("<18", "18-35", "36-60", ">60")),
+  
+  # Create BMI categories
+  bmi_category = case_when(
+    bmi < 18.5 ~ "Underweight",
+    bmi >= 18.5 & bmi < 24.9 ~ "Normal weight",
+    bmi >= 25 & bmi < 29.9 ~ "Overweight",
+    bmi >= 30 ~ "Obese"
+  ) %>% factor(levels = c("Underweight", "Normal weight", "Overweight", "Obese"))
+  
+)
+  
 
 ```
 
+The average glucose level variable can be considered redundant or less informative for exploratory data analysis (EDA) without additional context about when the readings were taken. 
+
+Glucose levels can fluctuate significantly based on factors such as fasting status, recent meals, and time of day. For example, a reading taken shortly after eating will typically be higher than a fasting reading - 
+
+```{r blood glucose chart,  fig.cap="Blood Glucose Chart from 'Lark Health' "}
+knitr::include_graphics("BloodGlucoseChart.jpeg")
+```
+
+Without knowing the conditions under which the glucose levels were measured, it becomes difficult to draw meaningful conclusions or identify trends during EDA. A reading labeled as "normal" may not actually reflect the patient’s metabolic health.
+
+```{r removing glucose level variable from dataset and looking at data types of dataset}
+stroke_data <- stroke_data %>% select(-avg_glucose_level)
+
+str(stroke_data)
+
+top_n(stroke_data, 10)
+```
+
+
+
+## Exploratory Data Analysis - Summary Statistics
+
+```{r}
+summary(stroke_data$age)
+```
+```{r}
+age_counts <- stroke_data %>%
+  group_by(age_category) %>%
+  summarise(patient_count = n()) %>%
+  mutate("Percentage (%)"= (patient_count / sum(patient_count)) * 100) %>%
+  arrange(age_category)
+
+flextable(age_counts)
+
+```
+
+```{r plotting distribution of patients across age categories}
+ggplot(age_counts, aes(x = age_category, y = patient_count)) +
+  geom_col(fill = "blue", alpha = 0.8) +
+  geom_text(aes(label = patient_count), vjust = -0.5, size = 3.5, color = "darkblue") +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Number of patients by age category",
+       x = "Age Category",
+       y = "Number of Patients") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major = element_line(size = 0.1, linetype = 'dotted'),
+    panel.grid.minor = element_blank()
+  ) 
+
+```
+
+
+```{r}
+age_counts_w_stroke <- stroke_data %>%
+  group_by(age_category,stroke_yn) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100) %>%
+  arrange(age_category)
+
+age_counts_w_stroke
+```
