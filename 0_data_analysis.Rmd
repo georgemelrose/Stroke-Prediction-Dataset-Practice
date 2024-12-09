@@ -17,14 +17,14 @@ knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
 
 pacman::p_load(tidyverse,icd,knitr,kableExtra,finalfit,lubridate,data.table,
                janitor,flextable,survival,survminer,cmprsk,rmdHelpers, ggrepel,
-               scales,RColorBrewer,GGally,randomForest, caret,DT)
+               scales,RColorBrewer,GGally,randomForest, caret,DT, gtsummary,cardx,ggsurvfit)
 
 ```
 
 ## Formatting Data
 
 ```{r loading in data}
-stroke_data <- read_csv("healthcare-dataset-stroke-data.csv.csv")
+stroke_data <- read_csv("healthcare-dataset-stroke-data.csv")
 ```
 ```{r}
 str(stroke_data)
@@ -354,3 +354,265 @@ ggplot(bmi_counts_w_stroke, aes(x = bmi_category, y = patient_count, fill = stro
 ```
 
 There is a higher rate of stroke associated with the 'Overweight' and 'Obese' BMI categories but perhaps not a significant level.
+
+## Survival Analysis {.tabset .tabset-fade .tabset-pills}
+
+```{r rounding numeric time columns}
+stroke_data$follow_up_time_days <- round(stroke_data$follow_up_time_days, 0)
+
+stroke_data$follow_up_years <- round(stroke_data$follow_up_years, 2)
+```
+
+```{r creating a survival object}
+Surv(stroke_data$follow_up_years, stroke_data$status)
+```
+
+```{r creating a survival curve using the KM method}
+
+fit_stroke <- survfit(Surv(follow_up_years, status) ~ 1, data = stroke_data)
+
+str(fit_stroke)
+```
+
+
+```{r}
+ggsurvplot(
+  fit_stroke,
+  xlim = c(0, 5),
+  ylim = c(0.7, 1),
+  break.time.by = 1,
+  xlab = "Years since Study Start",
+  ylab = "Survival Probability",
+  pval = TRUE,
+  ggtheme = theme_minimal() + theme(
+    panel.grid.major = element_blank(), # Remove major grid lines
+    panel.grid.minor = element_blank(), # Remove minor grid lines
+    panel.background = element_blank(), # Remove panel background
+    plot.background = element_blank(),  # Remove plot background
+    axis.line = element_line(color = "black"), # Keep axis lines
+    axis.title = element_text(size = 20), # Increase axis title size
+    axis.text = element_text(size = 17),  # Increase axis text size
+    legend.text = element_text(size = 20), # Increase legend text size
+    legend.title = element_text(size = 25), # Increase legend title size
+    plot.title = element_text(size = 25), # Increase plot title size
+    plot.subtitle = element_text(size = 20), # Increase plot subtitle size
+    legend.key.size = unit(1, "lines")      # Adjust legend key size
+  ),
+  risk.table = TRUE,
+  risk.table.y.text.col = TRUE,
+  risk.table.height = 0.2,                 # Slightly increase height of risk table
+  risk.table.y.text = TRUE,
+  conf.int = TRUE,
+  cumcensor = FALSE,
+  conf.int.style = "step",
+  risk.table.fontsize = 4,                 # Reduce risk table font size
+  risk.table.title = "Subjects at Risk",   # Set risk table title
+  tables.theme = theme_minimal() + theme(
+    axis.text.x = element_text(size = 12), # Adjust x-axis text in risk table
+    axis.text.y = element_text(size = 12)  # Adjust y-axis text in risk table
+  )
+)
+
+
+```
+
+```{r estimating 3 year survival}
+summary(survfit(Surv(follow_up_years, status) ~ 1, data = stroke_data), times = 3)
+
+```
+
+```{r estimating 3 year survival rate table}
+survfit(Surv(follow_up_years, status) ~ 1, data = stroke_data) %>% 
+  tbl_survfit(
+    times = 3,
+    label_header = "**3-year survival (95% CI)**"
+  )
+
+
+```
+
+```{r estimating the media survival time}
+stroke_data %>% 
+  filter(status == 1) %>% 
+  summarize(median_surv = median(follow_up_years))
+```
+
+```{r median survival time using tbl survfit}
+survfit(Surv(follow_up_years, status) ~ 1, data = stroke_data) %>% 
+  tbl_survfit(
+    probs = 0.5,
+    label_header = "**Median survival (95% CI)**"
+  )
+```
+
+
+
+```{r comparing survival time for smoking status}
+stroke_data$smoking_status <- as.factor(stroke_data$smoking_status)
+
+# Reorder levels: place "never smoked" first
+stroke_data$smoking_status <- stroke_data$smoking_status %>% relevel(ref = "never smoked")
+
+stroke_data$smoking_status <- factor(stroke_data$smoking_status , levels = c("never smoked", "formerly smoked", "smokes")) %>% relevel(ref = "never smoked")
+
+
+# Verify the new order of levels
+levels(stroke_data$smoking_status)
+
+summary(stroke_data$smoking_status)
+
+survfit(Surv(follow_up_years, status) ~ smoking_status, data = stroke_data)
+
+fit_smoking <- survfit(Surv(follow_up_years, status) ~ smoking_status, data = stroke_data)
+```
+
+```{r}
+ggsurvplot(
+  fit_smoking,
+  xlim = c(0, 5),
+  ylim = c(0.7, 1),
+  break.time.by = 1,
+  xlab = "Years since Study Start",
+  ylab = "Survival Probability",
+  pval = TRUE,
+  ggtheme = theme_minimal() + theme(
+    panel.grid.major = element_blank(), # Remove major grid lines
+    panel.grid.minor = element_blank(), # Remove minor grid lines
+    panel.background = element_blank(), # Remove panel background
+    plot.background = element_blank(),  # Remove plot background
+    axis.line = element_line(color = "black"), # Keep axis lines
+    axis.title = element_text(size = 20), # Increase axis title size
+    axis.text = element_text(size = 17),  # Increase axis text size
+    legend.text = element_text(size = 20), # Increase legend text size
+    legend.title = element_text(size = 25), # Increase legend title size
+    plot.title = element_text(size = 25), # Increase plot title size
+    plot.subtitle = element_text(size = 20), # Increase plot subtitle size
+    legend.key.size = unit(1, "lines")      # Adjust legend key size
+  ),
+  risk.table = TRUE,
+  risk.table.y.text.col = TRUE,
+  risk.table.height = 0.2,                 # Slightly increase height of risk table
+  risk.table.y.text = TRUE,
+  conf.int = TRUE,
+  cumcensor = FALSE,
+  conf.int.style = "step",
+  pval.coord = c(0, 0.87), pval.method = TRUE, pval.method.coord = c(0, 0.84),
+  risk.table.fontsize = 4,                 # Reduce risk table font size
+  risk.table.title = "Subjects at Risk",   # Set risk table title
+  tables.theme = theme_minimal() + theme(
+    axis.text.x = element_text(size = 12), # Adjust x-axis text in risk table
+    axis.text.y = element_text(size = 12)  # Adjust y-axis text in risk table
+  )
+)
+
+```
+
+Quantifying the effect size for multiple variables using Cox Regression -
+
+Some key assumptions of the model:
+
+* non-informative censoring
+* proportional hazards
+
+
+```{r}
+coxph(Surv(follow_up_years, status) ~ smoking_status, data = stroke_data) %>% 
+  tbl_regression(exp = TRUE) 
+```
+
+
+
+```{r}
+cuminc(Surv(follow_up_years, status) ~ smoking_status, data = stroke_data) %>% 
+  ggcuminc() + 
+  labs(
+    x = "Years"
+  ) + 
+  add_confidence_interval() +
+  add_risktable()
+```
+
+```{r}
+ci_fit <- cuminc(stroke_data$follow_up_years , stroke_data$status)
+
+ciplot <- ci_fit %>% list_modify("Tests" = NULL) %>%
+  map_df(`[`, c("time", "est", "var"), .id = "id") %>%
+   mutate(Stroke = recode(
+    id,
+    "1 1" = "Stroke"))
+
+
+ggplot(ciplot, aes(x = time, y = est, color = Stroke)) +
+  geom_step(lwd = 1.2) +
+  scale_y_continuous(limits = c(0, 0.4), labels = scales::percent_format(accuracy = 1)) +  # Format y-axis as percentages
+  scale_x_continuous(breaks = seq(0, 5, 1), limits = c(0, 5)) +  # Setting limits here
+  theme_minimal() +  # Use theme_minimal for a simple background
+  theme(
+    plot.title = element_text(size = 25), # Increase plot title size
+    legend.title = element_blank(),
+    legend.position = "bottom",
+    axis.title = element_text(size = 20), # Increase axis title size
+    axis.text = element_text(size = 17),  # Increase axis text size
+    legend.text = element_text(size = 20), # Increase legend text size
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+    panel.background = element_rect(fill = "white", color = NA),  # Ensure background is white and remove panel border
+    plot.background = element_rect(fill = "white", color = NA),  # Ensure plot area is white and remove plot border
+    axis.line = element_line(color = "black"),  # Keep axis lines
+    axis.line.y.right = element_blank(),  # Remove right side axis line
+    axis.line.x.top = element_blank()  # Remove top side axis line
+  ) +
+  labs(
+    x = "Days",
+    y = "Cumulative Strokes",
+    title = "All Patients"
+  )
+```
+
+```{r}
+ci_smoking <- cuminc(stroke_data$follow_up_years , stroke_data$status, group = stroke_data$smoking_status)
+
+ciplot <- ci_smoking %>% list_modify("Tests" = NULL) %>%
+  map_df(`[`, c("time", "est", "var"), .id = "id") %>%
+   mutate(id = recode(
+    id,
+    "never smoked 1" = "Never Smoked Strokes",
+    "formerly smoked 1" = "Formerly Smoked Strokes",
+    "smokes 1" = "Smoked Strokes")) %>%
+  separate(id, c("smoking_status","Event"),":")
+
+
+ggplot(ciplot, aes(x = time, y = est, color = smoking_status)) +
+  geom_step(lwd = 1.2) +
+  scale_y_continuous(limits = c(0, 0.4), labels = scales::percent_format(accuracy = 1)) +  # Format y-axis as percentages
+  scale_x_continuous(breaks = seq(0, 5, 1), limits = c(0, 5)) +  # Setting limits here
+  theme_minimal() +  # Use theme_minimal for a simple background
+  theme(
+    plot.title = element_text(size = 20), # Increase plot title size
+    legend.title = element_blank(),
+    legend.position = "bottom",
+    axis.title = element_text(size = 10), # Increase axis title size
+    axis.text = element_text(size = 8),  # Increase axis text size
+    legend.text = element_text(size = 10), # Increase legend text size
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+    panel.background = element_rect(fill = "white", color = NA),  # Ensure background is white and remove panel border
+    plot.background = element_rect(fill = "white", color = NA),  # Ensure plot area is white and remove plot border
+    axis.line = element_line(color = "black"),  # Keep axis lines
+    axis.line.y.right = element_blank(),  # Remove right side axis line
+    axis.line.x.top = element_blank()  # Remove top side axis line
+  ) +
+  labs(
+    x = "Days",
+    y = "Cumulative strokes",
+    title = "Stratified by Smoking Status"
+  ) +
+  annotate("text", x = 0, y = 0.26, hjust = 0,
+           label = paste0(
+             "Readmissions p-value = ",
+             ifelse(ci_smoking$Tests[1,2] < .001,
+                    "<.001",
+                    round(ci_smoking$Tests[1,2], 3))),
+           size = 5)
+```
+
