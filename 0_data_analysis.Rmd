@@ -26,6 +26,7 @@ pacman::p_load(tidyverse,icd,knitr,kableExtra,finalfit,lubridate,data.table,
 ```{r loading in data}
 stroke_data <- read_csv("healthcare-dataset-stroke-data.csv")
 ```
+
 ```{r}
 str(stroke_data)
 ```
@@ -78,7 +79,7 @@ stroke_data <- stroke_data %>%
     status = ifelse(stroke == 1, 1, 0)  # 1 = event (stroke), 0 = censored (no stroke)
   )
 
-# Assuming you already have a follow-up time in days
+# Making up a follow up time in years
 stroke_data <- stroke_data %>%
   mutate(
     follow_up_time_days = as.numeric(follow_up_time_days),  # Replace with your column name
@@ -523,16 +524,6 @@ coxph(Surv(follow_up_years, status) ~ smoking_status, data = stroke_data) %>%
 
 
 ```{r}
-cuminc(Surv(follow_up_years, status) ~ smoking_status, data = stroke_data) %>% 
-  ggcuminc() + 
-  labs(
-    x = "Years"
-  ) + 
-  add_confidence_interval() +
-  add_risktable()
-```
-
-```{r}
 ci_fit <- cuminc(stroke_data$follow_up_years , stroke_data$status)
 
 ciplot <- ci_fit %>% list_modify("Tests" = NULL) %>%
@@ -609,7 +600,7 @@ ggplot(ciplot, aes(x = time, y = est, color = smoking_status)) +
   ) +
   annotate("text", x = 0, y = 0.26, hjust = 0,
            label = paste0(
-             "Readmissions p-value = ",
+             "Log-rank p-value = ",
              ifelse(ci_smoking$Tests[1,2] < .001,
                     "<.001",
                     round(ci_smoking$Tests[1,2], 3))),
