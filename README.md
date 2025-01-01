@@ -27,7 +27,35 @@ With the above in mind, here is the PPDAC plan for this project-
   
 * Can robust predictive models be built to identify individuals at high risk of stroke using the available data?
 
-## Dataset
+### Plan
+
+**Data Preparation**
+1. **Data Cleaning** - Check for missingness and decide on imputation or exclusion. Recode variables for consistency and survival analysis, like binary coding.
+   
+2. **Variable Formatting** - Make sure variable have appropriate variable types (numeric for age and factor for gender for example).
+
+**EDA**
+1. **Summary Statistics** for the numeric/integer variables.
+   
+2. **Different visualisations**: boxplots to examine relationships (avg_glucose_level vs stroke); Q-Q plots to assess the normality of continuous variables; bar charts for categorical variable relationships (e.g. work_type distribution by stroke status).
+
+3. **Basic statistical tests** like t-tests and chi-squared tests to see if there any statistically significant associations between variables.
+
+**Advanced Analysis** 
+
+1. **Survival Analysis** -
+
+* Kaplan-Meier curves to estimate stroke survival probabilities.
+
+* Cox regression models to assess the risk factors affecting stroke survival times.
+
+2. **Predictive Modelling** -
+
+* Training different models like logistic regression, random forest or even XGBoost to predict stroke risk.
+  
+* Evaluating aforementioned models using metrics like AUC-ROC.
+
+**Data**
 This is a dataset of 5110 rows, each row representing 1 unique individual patient, and the following 12 columns:
 * **id -** unique identifier
 * **gender -** "Male", "Female" or "Other"
@@ -43,7 +71,19 @@ This is a dataset of 5110 rows, each row representing 1 unique individual patien
 * **stroke -** 1 if the patient had a stroke or 0 if not
 * *Note: "Unknown" in smoking_status means that the information is unavailable for this patient
 
-I plan to do the formatting of variables and exploratory data analysis (summary statistics, Q-Q plots, box-plots, t-tests etc.), followed by survival analysis and prediction modelling in an RMD to be knitted into an interactive HTML document. 
+***Potential Challenges*** - Missingness in important variables like bmi and smoking_status. Imbalance in the target variable of stroke, there probably being a majority class for not having stroke so fitting a log.regression model and others may not work well. 
+
+**Analysis**
+
+1. **EDA** - Summarise and visualise important variables using tidyverse and finalfit. Assess relationships using finalfit and base R packages.
+   
+2. **Survival Analysis** - Utilising the survival, ggsurvfit, and gtsummary packages make KM plots for different variables and then generate a cox-regression model.
+   
+3. **Prediction Models** - Several steps to this: feature engineering & data preprocessing; train/test split & cross-validation; model fitting and evaluation.
+
+**Conclusions (anticipated)** - 
+
+***Outcomes*** - Identifying key risk factors associated with stroke; developing a prediction model to assess stroke risk (with good accuracy/metrics); 
 
 ## Resources/Further Reading
 I've planned the analysis using the following resources:
