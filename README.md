@@ -83,7 +83,9 @@ This is a dataset of 5110 rows, each row representing 1 unique individual patien
 
 **Conclusions (anticipated)** - 
 
-***Outcomes*** - Identifying key risk factors associated with stroke; developing a prediction model to assess stroke risk (with good accuracy/metrics); 
+***Outcomes*** - Identifying key risk factors associated with stroke; developing a prediction model to assess stroke risk (with good accuracy/metrics); RMD HTML document summarising aforementioned outcomes with EDA and background to the subject given. 
+
+***Potential Impacts*** - Ehanced understanding of stroke risk factors; reproducible code for other health data analysis; clinical intervention strategies developed. 
 
 ## Resources/Further Reading
 I've planned the analysis using the following resources:
