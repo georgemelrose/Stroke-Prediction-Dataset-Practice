@@ -16,7 +16,7 @@ rm(list = ls())
 knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
 
 pacman::p_load(tidyverse,icd,knitr,kableExtra,finalfit,lubridate,data.table,
-               janitor,flextable,survival,survminer,cmprsk,rmdHelpers, ggrepel,
+               janitor,flextable,survival,survminer,rmdHelpers, ggrepel,
                scales,RColorBrewer,GGally,randomForest, caret,DT, gtsummary,cardx,ggsurvfit)
 
 ```
@@ -149,6 +149,35 @@ stroke_data <- stroke_data %>% select(-avg_glucose_level)
 str(stroke_data)
 
 datatable(stroke_data[1:10, ],options = list(scrollX = TRUE))
+```
+```{r generating necessary factor variables}
+
+#gender#
+stroke_data$gender <- as.factor(stroke_data$gender)
+
+summary(stroke_data$gender)
+
+#ever_married#
+
+stroke_data$ever_married <- as.factor(stroke_data$ever_married)
+
+summary(stroke_data$ever_married)
+
+#work_type#
+stroke_data$work_type <- as.factor(stroke_data$work_type)
+
+summary(stroke_data$work_type)
+
+#residence_type#
+stroke_data$residence_type <- as.factor(stroke_data$residence_type)
+
+summary(stroke_data$residence_type)
+
+#smoking_status#
+stroke_data$smoking_status <- as.factor(stroke_data$smoking_status)
+
+summary(stroke_data$smoking_status)
+
 ```
 
 
@@ -356,6 +385,20 @@ ggplot(bmi_counts_w_stroke, aes(x = bmi_category, y = patient_count, fill = stro
 ```
 
 There is a higher rate of stroke associated with the 'Overweight' and 'Obese' BMI categories but perhaps not a significant level.
+
+### Gender
+
+Summary statistics for BMI - 
+
+```{r summary statistics for the gender variable}
+
+#summary statistics for gender#
+
+summary(stroke_data$gender)
+
+
+```
+
 
 ## Survival Analysis {.tabset .tabset-fade .tabset-pills}
 
