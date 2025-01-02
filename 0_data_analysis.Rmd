@@ -388,16 +388,157 @@ There is a higher rate of stroke associated with the 'Overweight' and 'Obese' BM
 
 ### Gender
 
-Summary statistics for BMI - 
+```{r counting the numbers and proportions of patients by gender}
+gender_counts <- stroke_data %>%
+  group_by(gender) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+        percentage = signif(percentage, 3)) %>%
+  arrange(gender)
 
-```{r summary statistics for the gender variable}
+gender_counts_table <- gender_counts %>% rename("Percentage (%)" = percentage) %>% rename(
+"No.Patients" = patient_count) %>% rename("Gender" = gender)
 
-#summary statistics for gender#
-
-summary(stroke_data$gender)
-
+flextable(gender_counts_table)
 
 ```
+
+The cohort is majority female at 60.6% and 39.4% male. One patient is marked as 'other'. It is unclear what this means - an input mistake, transgender? To not disturb any other modelling, this patient is removed.
+
+```{r removing the one patient who has gender as other}
+
+stroke_data <- stroke_data %>% filter(gender == "Male" | gender == "Female")
+
+```
+
+```{r plotting distribution of patients across the genders}
+#redoing gender counts to reflect removed 'other' patient'
+gender_counts <- stroke_data %>%
+  group_by(gender) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+        percentage = signif(percentage, 3)) %>%
+  arrange(gender)
+
+ggplot(gender_counts, aes(x = gender, y = patient_count)) +
+  geom_col(fill = "blue", alpha = 0.8) +
+  geom_text(aes(label = patient_count), vjust = -0.5, size = 3.5, color = "darkblue") +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Number of Patients by Gender",
+       x = "Gender",
+       y = "Number of Patients") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major = element_line(size = 0.1, linetype = 'dotted'),
+    panel.grid.minor = element_blank()
+  ) 
+
+```
+
+
+
+```{r making a gender counts table stratified by stroke yes or no}
+gender_counts_w_stroke <- stroke_data %>%
+  group_by(gender,stroke_yn) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+                 percentage = signif(percentage, 3)) %>%
+  arrange(gender)
+
+gender_counts_w_stroke_table <- gender_counts_w_stroke %>% rename("Percentage (%)" = percentage) %>% rename(
+"No.Patients" = patient_count) %>% rename("Gender" = gender) %>% rename("Stroke (Yes/No)" = stroke_yn)
+
+flextable(gender_counts_w_stroke_table)
+```
+
+Interestingly, whilst there are many more female than male patients, the rate of stroke between the 2 genders stays consistent. 5.4% (139) of females experienced stroke and 6.44% (108) of males experienced stroke. 
+
+
+```{r plotting distribution of patients across gender and stroke categories}
+ggplot(gender_counts_w_stroke, aes(x = gender, y = patient_count, fill = stroke_yn)) +
+  geom_col(position = "dodge", alpha = 0.8) +
+  geom_text(aes(label = patient_count), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5, size = 3.5) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Number of Patients by Gender and Stroke Status",
+       x = "Gender",
+       y = "Number of Patients",
+       fill = "Stroke") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major = element_line(size = 0.1, linetype = 'dotted'),
+    panel.grid.minor = element_blank()
+  )
+
+```
+
+### Marriage
+
+```{r counting the numbers and proportions of patients by marriage}
+ever_married_counts <- stroke_data %>%
+  group_by(ever_married) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+        percentage = signif(percentage, 3)) %>%
+  arrange(ever_married)
+
+ever_married_counts_table <- ever_married_counts %>% rename("Percentage (%)" = percentage) %>% rename(
+"No.Patients" = patient_count) %>% rename("Marriage?" = ever_married)
+
+flextable(ever_married_counts_table)
+
+```
+
+
+```{r plotting distribution of patients across by marriage}
+
+ggplot(ever_married_counts, aes(x = ever_married, y = patient_count)) +
+  geom_col(fill = "blue", alpha = 0.8) +
+  geom_text(aes(label = patient_count), vjust = -0.5, size = 3.5, color = "darkblue") +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Number of Patients by Marriage",
+       x = "Ever Married?",
+       y = "Number of Patients") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major = element_line(size = 0.1, linetype = 'dotted'),
+    panel.grid.minor = element_blank()
+  ) 
+
+```
+
+
+```{r making a marriage counts table stratified by stroke yes or no}
+ever_married_counts_w_stroke <- stroke_data %>%
+  group_by(ever_married,stroke_yn) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+                 percentage = signif(percentage, 3)) %>%
+  arrange(ever_married)
+
+ever_married_counts_w_stroke_table <- ever_married_counts_w_stroke %>% rename("Percentage (%)" = percentage) %>% rename("No.Patients" = patient_count) %>% rename("Ever Married?" = ever_married) %>% rename("Stroke (Yes/No)" = stroke_yn)
+
+flextable(ever_married_counts_w_stroke_table)
+```
+
+
+
 
 
 ## Survival Analysis {.tabset .tabset-fade .tabset-pills}
