@@ -21,7 +21,9 @@ pacman::p_load(tidyverse,icd,knitr,kableExtra,finalfit,lubridate,data.table,
 
 ```
 
-## Formatting Data
+## Formatting Data {.tabset .tabset-fade .tabset-pills}
+
+### First look at the data
 
 ```{r loading in data}
 stroke_data <- read_csv("healthcare-dataset-stroke-data.csv")
@@ -122,6 +124,9 @@ stroke_data <- stroke_data %>% mutate(
   
 ```
 
+
+### Handling Missingness
+
 ```{r checking missingness again after making variables numeric}
 ff_glimpse(stroke_data)
 ```
@@ -139,13 +144,43 @@ unique(stroke_data$bmi_category)
 There are 181 NAs in the original 'bmi' variable. These didn't show up in the first usage of ff_glimpse() as the variable was a *character* type, so N/A and a numeric value were treated the same. A second usage of ff_glimpse() shows the 181 NAs, which of course are then carried on to the categorical variable when that is made.
 
 
-```{r}
+```{r missing values plot}
 explanatory <- c("bmi")
 dependent <- "stroke"
 
 stroke_data %>% 
   missing_plot(dependent, explanatory)
 ```
+
+There are different types of missingness:
+
+* **MCAR (Missing Completely at Random)** - "Missing data values do not relate to any other data in the dataset and there is no pattern to the actual values of the missing data themselves."
+
+
+* **MAR (Missing at Random)** -  "This is confusing and would be better named *missing conditionally at random*. Here, missingness in a particular variable has an association with one or more other variables in the dataset. However, the actual values of the missing data are random."
+
+* **MNAR (Missing not at random)** - "The pattern of missingness is related to other variables in the dataset, but in addition, *the actual values of the missing data are not random*."
+
+Fo example, in a different dataset, smoking status would be missing in females more likely to smoke but not in males. 
+
+"Thus, the complete case female patients have different characteristics to the missing data female patients. For instance, the missing data female patients may be more likely to die after cancer treatment. Looking at our available population, ***we therefore under estimate the likelihood of a female dying from cancer treatment***."
+
+
+"In deciding whether data is MCAR or MAR, one approach is to explore patterns of missingness between levels of included variables. This is particularly important...for a primary outcome measure / dependent variable.
+
+Take for example “death”. When that outcome is missing it is often for a particular reason. For example, perhaps patients undergoing emergency surgery were less likely to have complete records compared with those undergoing planned surgery. And of course, death is more likely after emergency surgery."
+
+```{r checking for associations between missing and observed data}
+explanatory <- "bmi"
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+
+### Removing Blood Glucose Variable
 
 
 The average glucose level variable can be considered redundant or less informative for exploratory data analysis (EDA) without additional context about when the readings were taken. 
@@ -165,6 +200,11 @@ str(stroke_data)
 
 datatable(stroke_data[1:10, ],options = list(scrollX = TRUE))
 ```
+
+
+### Making Factor Variables
+
+
 ```{r generating necessary factor variables}
 
 #gender#
@@ -372,7 +412,7 @@ flextable(bmi_counts_w_stroke_table)
 
 The above summary table shows the percentage of patients having a stroke is higher in the 'Overweight' and 'Obese' BMI categories than in the 'Normal Weight' and 'Underweight' categories. 
 
-```{r plotting distribution of patients across age and stroke categories}
+```{r plotting distribution of patients across bmi and stroke categories}
 
 bmi_counts_w_stroke <- bmi_counts_w_stroke %>% filter(!is.na(bmi_category))
 
