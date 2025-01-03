@@ -6,7 +6,7 @@ Reading the excellent "The Art Of Statistics" by Prof.Spiegelhalter, I came acro
 * **(1) Problem** - Understanding and defining the problem
 * **(2) Plan** -  What to measure and how
 * **(3) Data** - Collection, management, and cleaning
-* **(4) Analysis** - Constructing visualisation, looking for patterns through basic and more specialist statistical analysis like prediction modelling.
+* **(4) Analysis** - Constructing visualisation, looking for patterns through basic and more specialist statistical analysis like prediction modelling
 * **(5) Conclusions** -  Interpretation and new ideas for future analysis
 
 _“Although in practice the PPDAC cycle… may not be followed precisely, it underscores that formal techniques for statistical analysis play only one part in the work of a statistician or data scientist,”_ - Prof. Spiegelhalter.
@@ -33,6 +33,8 @@ With the above in mind, here is the PPDAC plan for this project-
 1. **Data Cleaning** - Check for missingness and decide on imputation or exclusion. Recode variables for consistency and survival analysis, like binary coding.
    
 2. **Variable Formatting** - Make sure variable have appropriate variable types (numeric for age and factor for gender for example).
+   
+3. **Simulating Follow Up Time** - There is no follow up time present in the original dataset, so time variables need to be simulated to enable survival analysis. 
 
 **EDA**
 1. **Summary Statistics** for the numeric/integer variables.
@@ -71,7 +73,7 @@ This is a dataset of 5110 rows, each row representing 1 unique individual patien
 * **stroke -** 1 if the patient had a stroke or 0 if not
 * *Note: "Unknown" in smoking_status means that the information is unavailable for this patient
 
-***Potential Challenges*** - Missingness in important variables like bmi and smoking_status. Imbalance in the target variable of stroke, there probably being a majority class for not having stroke so fitting a log.regression model and others may not work well. 
+***Potential Challenges*** - Missingness in important variables like bmi and smoking_status. Imbalance in the target variable of stroke, there probably being a majority class for not having stroke so fitting a log.regression model and others may not work well. No time variables - they need to be simulated. 
 
 **Analysis**
 
