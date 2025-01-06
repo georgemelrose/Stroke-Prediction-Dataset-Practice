@@ -287,14 +287,14 @@ The multiple imputation process is as follows:
 
 ```{r choosing variables to be imputed and be used in imputation}
 
-explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+explanatory <- c("id","bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
                  "work_type","residence_type","smoking_status")
 dependent <- "stroke_yn"
 
 stroke_data %>% 
   select(dependent, explanatory) %>% 
   missing_predictorMatrix(
-    drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
+    drop_from_imputed = c("id","gender","age","hypertension_yn","heart_disease_yn","ever_married",
                  "work_type","residence_type","smoking_status","stroke_yn")
   ) -> predM
 ```
@@ -376,7 +376,7 @@ table_imputed
 
 ```{r}
 
-explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+explanatory <- c("id","bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
                  "work_type","residence_type","smoking_status")
 dependent <- "stroke_yn"
 
@@ -384,7 +384,7 @@ stroke_data %>%
   select(dependent, explanatory) %>% 
   missing_predictorMatrix(
     drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
-                 "work_type","residence_type","smoking_status","stroke_yn")
+                 "work_type","residence_type","smoking_status","stroke_yn","id")
   ) -> predM
 
 fits <- stroke_data %>%
@@ -399,6 +399,9 @@ xyplot(fits,bmi ~ age,pch=18,cex=1)
 densityplot(fits)
 ```
 
+```{r}
+imputed_bmi_values <- completedData %>% select(id, bmi)
+```
 
 
 
