@@ -17,7 +17,7 @@ knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
 
 pacman::p_load(tidyverse,icd,knitr,kableExtra,finalfit,lubridate,data.table,
                janitor,flextable,survival,survminer,rmdHelpers, ggrepel,
-               scales,RColorBrewer,GGally,randomForest, caret,DT, gtsummary,cardx,ggsurvfit)
+               scales,RColorBrewer,GGally,randomForest, caret,DT, gtsummary,cardx,ggsurvfit,mice)
 
 ```
 
@@ -214,7 +214,29 @@ summary(stroke_data$smoking_status)
 
 ```
 
+### MICE on MAR BMI 
 
+Multivariate Imputation by Chained Equations (mice) is "*...the process of filling in missing data using a best-estimate from all the other data that exists.*" (Section 11.8.1 of the HealthyR book)
+
+If missingness in BMI is predicted strongly by stroke outcome (and other observed variables), and the values of the missing data are random, then we can impute (best-guess) the missing BMI values using those variables.
+
+"*Imputation is not usually appropriate for the explanatory variable of interest or the outcome variable, although these can be used to impute other variables. In both cases, the hypothesis is that there is a meaningful association with other variables in the dataset, therefore it doesn’t make sense to use these variables to impute them.*"
+
+The multiple imputation process is as follows:
+
+* **Impute** missing data *m* times, resulting in *m* complete datasets.
+
+* **Diagnose** the quality of the impute values.
+
+* **Analyse** each completed dataset.
+
+* **Pool** the results of the reported analyses.
+
+#### Impute
+
+```{r}
+
+```
 
 
 ### Removing Blood Glucose Variable
