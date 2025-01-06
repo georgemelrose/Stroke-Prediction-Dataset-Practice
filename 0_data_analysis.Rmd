@@ -140,8 +140,8 @@ unique(stroke_data$bmi_category)
 There are 181 NAs in the original 'bmi' variable. These didn't show up in the first usage of ff_glimpse() as the variable was a *character* type, so N/A and a numeric value were treated the same. A second usage of ff_glimpse() shows the 181 NAs, which of course are then carried on to the categorical variable when that is made.
 
 ```{r missing values plot}
-explanatory <- c("bmi_category","gender","hypertension","heart_disease",
-                 "ever_married","work_type","residence_type")
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status")
 dependent <- "stroke_yn"
 
 stroke_data %>% 
@@ -172,7 +172,7 @@ stroke_data %>%
 ```
 
 ```{r checking for associations between missing and observed data part 1}
-explanatory <- c("bmi_category","gender","hypertension_yn","ever_married")
+explanatory <- c("bmi","gender","hypertension_yn","ever_married")
 dependent <- "stroke_yn"
 
 stroke_data %>% 
@@ -181,7 +181,7 @@ stroke_data %>%
 ```
 
 ```{r checking for associations between missing and observed data part 2}
-explanatory <- c("bmi_category","work_type","residence_type","smoking_status")
+explanatory <- c("bmi","work_type","residence_type","smoking_status")
 dependent <- "stroke_yn"
 
 stroke_data %>% 
@@ -190,7 +190,7 @@ stroke_data %>%
 ```
 
 ```{r checking for associations between missing and observed data part 3}
-explanatory <- c("bmi_category","heart_disease_yn","age_category")
+explanatory <- c("bmi","heart_disease_yn","age")
 dependent <- "stroke_yn"
 
 stroke_data %>% 
@@ -204,7 +204,7 @@ Looking at the above 3 plots, the following can be observed:
 
 * There is also slightly more missingness in those with hypertension than those patients without it.
 
-* In those patients with heart disease and older patients (>60), there is also more BMI missingness. 
+* In those patients with heart disease and an average older patients , there is also more BMI missingness. 
 
 * Given the above info., we can start to conclude that the BMI variable missingness is MAR - *missingness in a particular variable that has an association with one or more other variables in the dataset*.
 
@@ -244,6 +244,27 @@ summary(stroke_data$smoking_status)
 
 ```
 
+In the gender and work_type variables there are factor levels with minuscule values - 'Other' in gender with 1 and 'Never_worked' in work_type with 5. These numbers are extremely small and likely to disturb further analysis so I'll make them NA so as to not lose the patients but not have the awkward category either. 
+
+
+```{r making nas from and dropping factor levels with too little in them}
+
+stroke_data$gender[stroke_data$gender == "Other"] <- NA
+
+stroke_data$work_type[stroke_data$work_type == "Never_worked"] <- NA
+
+stroke_data$gender <- droplevels(stroke_data$gender)
+
+stroke_data$work_type <- droplevels(stroke_data$work_type)
+
+
+summary(stroke_data$gender)
+
+summary(stroke_data$work_type)
+
+```
+
+
 ### MICE on MAR BMI 
 
 Multivariate Imputation by Chained Equations (mice) is "*...the process of filling in missing data using a best-estimate from all the other data that exists.*" (Section 11.8.1 of the HealthyR book)
@@ -264,9 +285,121 @@ The multiple imputation process is as follows:
 
 #### Impute
 
+```{r choosing variables to be imputed and be used in imputation}
+
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  select(dependent, explanatory) %>% 
+  missing_predictorMatrix(
+    drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","stroke_yn")
+  ) -> predM
+```
+
+```{r make 10 imputed datasets and run our logistic regression analysis on each set }
+fits <- stroke_data %>% 
+  select(dependent, explanatory) %>% 
+  
+  # Run imputation with 10 imputed sets
+  mice(m = 10, predictorMatrix = predM) %>% 
+  
+  # Run logistic regression on each imputed set
+  with(glm(formula(ff_formula(dependent, explanatory)), 
+           family="binomial"))
+```
+
+#### Diagnose
+
+```{r}
+# Examples of extracting metrics from fits and taking the mean
+## AICs
+fits %>% 
+  getfit() %>% 
+  purrr::map(AIC) %>%
+  unlist() %>% 
+  mean()
+```
+
+```{r}
+# C-statistic
+fits %>% 
+  getfit() %>% 
+  purrr::map(~ pROC::roc(.x$y, .x$fitted)$auc) %>% 
+  unlist() %>% 
+  mean()
+```
+
+#### Analyse
+
+```{r}
+# Pool results
+fits_pool <- fits %>% 
+  pool()
+
+## Can be passed to or_plot
+stroke_data %>% 
+  or_plot(dependent, explanatory, glmfit = fits_pool, table_text_size=4)
+```
+
+#### Pool
+
+```{r}
+# Summarise and put in table
+fit_imputed <- fits_pool %>%                                  
+  fit2df(estimate_name = "OR (multiple imputation)", exp = TRUE)
+
+# Use finalfit merge methods to create and compare results
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
+
+table_uni_multi <- stroke_data %>% 
+  finalfit(dependent, explanatory, keep_fit_id = TRUE) 
+
+explanatory = c("gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
+
+fit_multi_no_bmi <- stroke_data %>% 
+  glmmulti(dependent, explanatory) %>% 
+  fit2df(estimate_suffix = " (multivariable without BMI)") 
+
+# Combine to final table
+table_imputed <- 
+  table_uni_multi %>% 
+  ff_merge(fit_multi_no_bmi) %>% 
+  ff_merge(fit_imputed, last_merge = TRUE)
+
+table_imputed 
+```
+
+
+
 ```{r}
 
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  select(dependent, explanatory) %>% 
+  missing_predictorMatrix(
+    drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","stroke_yn")
+  ) -> predM
+
+fits <- stroke_data %>%
+select(dependent, explanatory) %>%
+mice(m = 10, predictorMatrix = predM)
+
+
+completedData <- complete(fits, action = 1)
+
+xyplot(fits,bmi ~ age,pch=18,cex=1)
+
+densityplot(fits)
 ```
+
+
 
 
 ### Removing Blood Glucose Variable
