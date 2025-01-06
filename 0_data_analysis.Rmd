@@ -140,7 +140,7 @@ unique(stroke_data$bmi_category)
 There are 181 NAs in the original 'bmi' variable. These didn't show up in the first usage of ff_glimpse() as the variable was a *character* type, so N/A and a numeric value were treated the same. A second usage of ff_glimpse() shows the 181 NAs, which of course are then carried on to the categorical variable when that is made.
 
 ```{r missing values plot}
-explanatory <- c("bmi","gender","hypertension","heart_disease",
+explanatory <- c("bmi_category","gender","hypertension","heart_disease",
                  "ever_married","work_type","residence_type")
 dependent <- "stroke_yn"
 
@@ -171,10 +171,8 @@ stroke_data %>%
 
 ```
 
-```{r checking for associations between missing and observed data}
-#explanatory <- "bmi"
-explanatory <- c("bmi_category","gender","hypertension","heart_disease",
-                 "ever_married","work_type","residence_type")
+```{r checking for associations between missing and observed data part 1}
+explanatory <- c("bmi_category","gender","hypertension_yn","ever_married")
 dependent <- "stroke_yn"
 
 stroke_data %>% 
@@ -182,7 +180,39 @@ stroke_data %>%
 
 ```
 
-There is more missingness for the BMI variable in those patients who have stroke than those who do not. There is also slightly more missingness in males and those who have ever married, looking at the second row of the above output. From this plot, we can start to conclude that the BMI variable missigness is MAR - *missingness in a particular variable has an association with one or more other variables in the dataset*.
+```{r checking for associations between missing and observed data part 2}
+explanatory <- c("bmi_category","work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed data part 3}
+explanatory <- c("bmi_category","heart_disease_yn","age_category")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+Looking at the above 3 plots, the following can be observed: 
+
+* There is more missingness for the BMI variable in those patients who have stroke than those who do not.
+
+* There is also slightly more missingness in those with hypertension than those patients without it.
+
+* In those patients with heart disease and older patients (>60), there is also more BMI missingness. 
+
+* Given the above info., we can start to conclude that the BMI variable missingness is MAR - *missingness in a particular variable that has an association with one or more other variables in the dataset*.
+
+
+
+
+
+
 
 ```{r generating necessary factor variables}
 
