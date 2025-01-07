@@ -325,11 +325,14 @@ explanatory <- c("id","bmi","gender","age","hypertension_yn","heart_disease_yn",
                  "work_type","residence_type","smoking_status")
 dependent <- "stroke_yn"
 
+#Choosing variables to not be imputed but still used by the mice function# 
 stroke_data %>% 
   select(dependent, explanatory) %>% 
   missing_predictorMatrix(
-    drop_from_imputed = c("id","gender","age","hypertension_yn","heart_disease_yn","ever_married",
-                 "work_type","residence_type","smoking_status","stroke_yn")
+    drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","stroke_yn","id"),
+    drop_from_imputer = c("gender","ever_married","work_type","residence_type","smoking_status",
+                          "id")
   ) -> predM
 ```
 
@@ -417,7 +420,9 @@ stroke_data %>%
   select(dependent, explanatory) %>% 
   missing_predictorMatrix(
     drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
-                 "work_type","residence_type","smoking_status","stroke_yn","id")
+                 "work_type","residence_type","smoking_status","stroke_yn","id"),
+    drop_from_imputer = c("gender","ever_married","work_type","residence_type","smoking_status",
+                          "id")
   ) -> predM
 
 fits <- stroke_data %>%
@@ -459,8 +464,6 @@ imputed_bmi_values <- imputed_bmi_values %>% filter(id %in% ids_wo_bmi)
 ```
 
 ```{r adding imputed bmi values back to stroke data df}
-
-test <- left_join(stroke_data, imputed_bmi_values, by = "id")
 
 stroke_data <- stroke_data %>%
   left_join(imputed_bmi_values, by = "id", suffix = c("", ".new")) %>%
