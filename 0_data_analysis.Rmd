@@ -271,7 +271,10 @@ summary(stroke_data$smoking_status)
 
 ```
 
-In the gender and work_type variables there are factor levels with minuscule values - 'Other' in gender with 1 and 'Never_worked' in work_type with 5. These numbers are extremely small and likely to disturb further analysis so I'll make them NA so as to not lose the patients but not have the awkward category either. 
+In the gender and work_type variables there are factor levels with minuscule values 
+- 'Other' in gender with 1 and 'Never_worked' in work_type with 5. These numbers 
+are extremely small and likely to disturb further analysis so I'll make them NA 
+so as to not lose the patients but not have the awkward category either. 
 
 
 ```{r making nas from and dropping factor levels with too little in them}
@@ -294,9 +297,13 @@ summary(stroke_data$work_type)
 
 ### MICE on MAR BMI 
 
-Multivariate Imputation by Chained Equations (mice) is "*...the process of filling in missing data using a best-estimate from all the other data that exists.*" (Section 11.8.1 of the HealthyR book)
+Multivariate Imputation by Chained Equations (mice) is 
+"*...the process of filling in missing data using a best-estimate from all the other data that exists.*" 
+(Section 11.8.1 of the HealthyR book)
 
-If missingness in BMI is predicted strongly by stroke outcome (and other observed variables), and the values of the missing data are random, then we can impute (best-guess) the missing BMI values using those variables.
+If missingness in BMI is predicted strongly by stroke outcome (and other observed variables),
+and the values of the missing data are random, then we can impute (best-guess) 
+the missing BMI values using those variables.
 
 "*Imputation is not usually appropriate for the explanatory variable of interest or the outcome variable, although these can be used to impute other variables. In both cases, the hypothesis is that there is a meaningful association with other variables in the dataset, therefore it doesn’t make sense to use these variables to impute them.*"
 
@@ -428,13 +435,16 @@ completedData <- complete(fits, action = 1)
 xyplot(fits,bmi ~ age,pch=18,cex=1)
 ```
 
-The above is a scatter plot of original and imputed data with the magenta points being the imputed data points and the blue points being the observed values. The matching shape is a good verification of the imputed values indeed being plausible.
+The above is a scatter plot of original and imputed data with the magenta points 
+being the imputed data points and the blue points being the observed values. 
+The matching shape is a good verification of the imputed values indeed being plausible.
 
 ```{r density plot of observed and imputed values }
 densityplot(fits)
 ```
 
-The density of the imputed data for each imputed dataset is magenta and the density of the observed data is blue. Again, we expect the distributions to be similar.
+The density of the imputed data for each imputed dataset is magenta and 
+the density of the observed data is blue. Again, we expect the distributions to be similar.
 
 
 ```{r extracting id and bmi and limiting to just ids wo valid bmi}
@@ -482,15 +492,20 @@ ff_glimpse(stroke_data)
 
 ### Removing Blood Glucose Variable
 
-The average glucose level variable can be considered redundant or less informative for exploratory data analysis (EDA) without additional context about when the readings were taken.
+The average glucose level variable can be considered redundant or less informative 
+for exploratory data analysis (EDA) without additional context about when the readings were taken.
 
-Glucose levels can fluctuate significantly based on factors such as fasting status, recent meals, and time of day. For example, a reading taken shortly after eating will typically be higher than a fasting reading -
+Glucose levels can fluctuate significantly based on factors such as fasting status, 
+recent meals, and time of day. For example, a reading taken shortly after eating 
+will typically be higher than a fasting reading -
 
 ```{r blood glucose chart,  fig.cap="Blood Glucose Chart from 'Lark Health' "}
 knitr::include_graphics("BloodGlucoseChart.jpeg")
 ```
 
-Without knowing the conditions under which the glucose levels were measured, it becomes difficult to draw meaningful conclusions or identify trends during EDA. A reading labeled as "normal" may not actually reflect the patient’s metabolic health.
+Without knowing the conditions under which the glucose levels were measured, 
+it becomes difficult to draw meaningful conclusions or identify trends during EDA. 
+A reading labeled as "normal" may not actually reflect the patient’s metabolic health.
 
 ```{r removing glucose level variable from dataset and looking at data types of dataset}
 stroke_data <- stroke_data %>% select(-avg_glucose_level)
@@ -515,9 +530,11 @@ summary(stroke_data$age)
 
 ```
 
--   From the summary statistics we see that the mean and median are 50.2 years and 50.5 years respectively. This is an indication of the age variable being normally distributed.
+-   From the summary statistics we see that the mean and median are 50.2 years 
+and 50.5 years respectively. This is an indication of the age variable being normally distributed.
 
--   The minimum age is 18 as per the earlier filtering removing all children. The maximum age of a patient is 82.
+-   The minimum age is 18 as per the earlier filtering removing all children. 
+The maximum age of a patient is 82.
 
 ```{r counting the numbers and proportions of patients in the three different age categories}
 age_counts <- stroke_data %>%
@@ -571,7 +588,11 @@ age_counts_w_stroke_table <- age_counts_w_stroke %>% rename("Percentage (%)" = p
 flextable(age_counts_w_stroke_table)
 ```
 
-The table above displaying the no.patients in each age category stratified by those having or not having a stroke shows that the no.patients having a stroke is heavily skewed towards the oldest age category. 13.6% of patients in the \>60 age category had a stroke, 3.62% of patients in the 36-60 age category had a stroke, and just 1 patients/0.0959% of patients in the 18-35 age category had a stroke.
+The table above displaying the no.patients in each age category stratified by 
+those having or not having a stroke shows that the no.patients having a stroke 
+is heavily skewed towards the oldest age category. 13.6% of patients in the 
+\>60 age category had a stroke, 3.62% of patients in the 36-60 age category had a stroke, 
+and just 1 patients/0.0959% of patients in the 18-35 age category had a stroke.
 
 ```{r plotting distribution of patients across age and stroke categories}
 ggplot(age_counts_w_stroke, aes(x = age_category, y = patient_count, fill = stroke_yn)) +
@@ -609,7 +630,10 @@ summary(stroke_data$bmi)
 
 ```
 
--   From the summary statistics we see that the mean and median BMIs are 29.2 and 30.4 respectively. This is an indication of the BMI variable being normally distributed. The maximum and minimum BMI values of 11.3 and 92 are way beyond any conceivable measurements and so may be outliers that need to be removed. There are 181 NAs out of 4,254 observations.
+-   From the summary statistics we see that the mean and median BMIs are 29.2 and 
+30.4 respectively. This is an indication of the BMI variable being normally distributed. 
+The maximum and minimum BMI values of 11.3 and 92 are way beyond any conceivable measurements 
+and so may be outliers that need to be removed. There are 181 NAs out of 4,254 observations.
 
 ```{r counting the numbers and proportions of patients in the four different bmi categories}
 bmi_counts <- stroke_data %>%
@@ -626,7 +650,8 @@ flextable(bmi_counts_table)
 
 ```
 
-The above table shows that this dataset has the vast majority of patients as overweight and obese, with only 20.3% at a normal, healthy BMI.
+The above table shows that this dataset has the vast majority of patients as 
+overweight and obese, with only 20.3% at a normal, healthy BMI.
 
 ```{r plotting distribution of patients across bmi categories}
 #Code to remove NAs from bmi_counts#
@@ -670,7 +695,8 @@ bmi_counts_w_stroke_table <- bmi_counts_w_stroke %>% rename("Percentage (%)" = p
 flextable(bmi_counts_w_stroke_table)
 ```
 
-The above summary table shows the percentage of patients having a stroke is higher in the 'Overweight' and 'Obese' BMI categories than in the 'Normal Weight' and 'Underweight' categories.
+The above summary table shows the percentage of patients having a stroke is higher 
+in the 'Overweight' and 'Obese' BMI categories than in the 'Normal Weight' and 'Underweight' categories.
 
 ```{r plotting distribution of patients across bmi and stroke categories}
 
@@ -699,7 +725,8 @@ ggplot(bmi_counts_w_stroke, aes(x = bmi_category, y = patient_count, fill = stro
 
 ```
 
-There is a higher rate of stroke associated with the 'Overweight' and 'Obese' BMI categories but perhaps not a significant level.
+There is a higher rate of stroke associated with the 'Overweight' and 'Obese' 
+BMI categories but perhaps not a significant level.
 
 ### Gender
 
@@ -718,7 +745,8 @@ flextable(gender_counts_table)
 
 ```
 
-The cohort is majority female at 60.6% and 39.4% male. One patient is marked as 'other'. It is unclear what this means - an input mistake, transgender? To not disturb any other modelling, this patient is removed.
+The cohort is majority female at 60.6% and 39.4% male. One patient is marked as 'other'. 
+It is unclear what this means - an input mistake, transgender? To not disturb any other modelling, this patient is removed.
 
 ```{r removing the one patient who has gender as other}
 
@@ -769,7 +797,9 @@ gender_counts_w_stroke_table <- gender_counts_w_stroke %>% rename("Percentage (%
 flextable(gender_counts_w_stroke_table)
 ```
 
-Interestingly, whilst there are many more female than male patients, the rate of stroke between the 2 genders stays consistent. 5.4% (139) of females experienced stroke and 6.44% (108) of males experienced stroke.
+Interestingly, whilst there are many more female than male patients, 
+the rate of stroke between the 2 genders stays consistent. 5.4% (139) of females experienced stroke 
+and 6.44% (108) of males experienced stroke.
 
 ```{r plotting distribution of patients across gender and stroke categories}
 ggplot(gender_counts_w_stroke, aes(x = gender, y = patient_count, fill = stroke_yn)) +
@@ -847,7 +877,9 @@ ever_married_counts_w_stroke_table <- ever_married_counts_w_stroke %>% rename("P
 flextable(ever_married_counts_w_stroke_table)
 ```
 
-The above table shows that the proportion of those patients experiencing stroke who had ever married (6.56%) was more than twice as much as the proportion of patients experiencing stroke who had never married (3%).
+The above table shows that the proportion of those patients experiencing stroke 
+who had ever married (6.56%) was more than twice as much as the proportion of patients 
+experiencing stroke who had never married (3%).
 
 ```{r plotting distribution of patients across marriage and stroke categories}
 ggplot(ever_married_counts_w_stroke, aes(x = ever_married, y = patient_count, fill = stroke_yn)) +
