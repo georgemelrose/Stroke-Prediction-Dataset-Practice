@@ -138,7 +138,10 @@ cat("Number of NAs in categorical BMI variable:", na_categorical_count, "\n")
 unique(stroke_data$bmi_category)
 ```
 
-There are 181 NAs in the original 'bmi' variable. These didn't show up in the first usage of ff_glimpse() as the variable was a *character* type, so N/A and a numeric value were treated the same. A second usage of ff_glimpse() shows the 181 NAs, which of course are then carried on to the categorical variable when that is made.
+There are 181 NAs in the original 'bmi' variable. These didn't show up in the first 
+usage of ff_glimpse() as the variable was a *character* type, so N/A and a numeric 
+value were treated the same. A second usage of ff_glimpse() shows the 181 NAs, 
+which of course are then carried on to the categorical variable when that is made.
 
 ```{r missing values plot}
 explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
@@ -151,19 +154,33 @@ stroke_data %>%
 
 There are different types of missingness:
 
--   **MCAR (Missing Completely at Random)** - "Missing data values do not relate to any other data in the dataset and there is no pattern to the actual values of the missing data themselves."
+-   **MCAR (Missing Completely at Random)** - "Missing data values do not relate 
+to any other data in the dataset and there is no pattern to the actual values of the missing data themselves."
 
--   **MAR (Missing at Random)** - "This is confusing and would be better named *missing conditionally at random*. Here, missingness in a particular variable has an association with one or more other variables in the dataset. However, the actual values of the missing data are random."
+-   **MAR (Missing at Random)** - "This is confusing and would be better named 
+*missing conditionally at random*. Here, missingness in a particular variable has 
+an association with one or more other variables in the dataset. However, 
+the actual values of the missing data are random."
 
--   **MNAR (Missing not at random)** - "The pattern of missingness is related to other variables in the dataset, but in addition, *the actual values of the missing data are not random*."
+-   **MNAR (Missing not at random)** - "The pattern of missingness is related to 
+other variables in the dataset, but in addition, *the actual values of the missing data are not random*."
 
-Fo example, in a different dataset, smoking status would be missing in females more likely to smoke but not in males.
+Fo example, in a different dataset, smoking status would be missing in females 
+more likely to smoke but not in males.
 
-"Thus, the complete case female patients have different characteristics to the missing data female patients. For instance, the missing data female patients may be more likely to die after cancer treatment. Looking at our available population, ***we therefore under estimate the likelihood of a female dying from cancer treatment***."
+"Thus, the complete case female patients have different characteristics to the 
+missing data female patients. For instance, the missing data female patients may 
+be more likely to die after cancer treatment. Looking at our available population,
+***we therefore under estimate the likelihood of a female dying from cancer treatment***."
 
-"In deciding whether data is MCAR or MAR, one approach is to explore patterns of missingness between levels of included variables. This is particularly important...for a primary outcome measure / dependent variable.
+"In deciding whether data is MCAR or MAR, one approach is to explore patterns of 
+missingness between levels of included variables. This is particularly 
+important...for a primary outcome measure / dependent variable.
 
-Take for example “death”. When that outcome is missing it is often for a particular reason. For example, perhaps patients undergoing emergency surgery were less likely to have complete records compared with those undergoing planned surgery. And of course, death is more likely after emergency surgery."
+Take for example “death”. When that outcome is missing it is often for a particular 
+reason. For example, perhaps patients undergoing emergency surgery were less likely 
+to have complete records compared with those undergoing planned surgery. 
+And of course, death is more likely after emergency surgery."
 
 ```{r looking for patterns of missingness}
 
@@ -209,8 +226,17 @@ Looking at the above 3 plots, the following can be observed:
 
 * Given the above info., we can start to conclude that the BMI variable missingness is MAR - *missingness in a particular variable that has an association with one or more other variables in the dataset*.
 
+The relevant variables that have an association with missingness in bmi are selected for a single missing pairs plot below.
 
+```{r generating a missing pairs plot of associated variables strokeyn heartdisease hypertension age}
 
+explanatory <- c("bmi","heart_disease_yn","hypertension_yn","age")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
 
 
 
@@ -422,7 +448,37 @@ imputed_bmi_values <- completedData %>% select(id, bmi)
 imputed_bmi_values <- imputed_bmi_values %>% filter(id %in% ids_wo_bmi)
 ```
 
+```{r adding imputed bmi values back to stroke data df}
 
+test <- left_join(stroke_data, imputed_bmi_values, by = "id")
+
+stroke_data <- stroke_data %>%
+  left_join(imputed_bmi_values, by = "id", suffix = c("", ".new")) %>%
+  mutate(bmi = coalesce(bmi, bmi.new)) %>%
+  select(-bmi.new)
+```
+
+```{r redoing the bmi category variable based on imputed data}
+
+stroke_data <- stroke_data %>% mutate(
+  
+  # Create BMI categories
+  bmi_category = case_when(
+    bmi < 18.5 ~ "Underweight",
+    bmi >= 18.5 & bmi <= 24.9 ~ "Normal weight",
+    bmi >= 25 & bmi <= 29.9 ~ "Overweight",
+    bmi >= 30 ~ "Obese",
+    TRUE ~ NA_character_
+  ) %>% factor(levels = c("Underweight", "Normal weight", "Overweight", "Obese"))
+  
+)
+  
+```
+
+```{r double check missingness has been sorted}
+ff_glimpse(stroke_data)
+
+```
 
 ### Removing Blood Glucose Variable
 
