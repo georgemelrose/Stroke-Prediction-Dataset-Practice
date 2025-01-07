@@ -17,7 +17,8 @@ knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
 
 pacman::p_load(tidyverse,icd,knitr,kableExtra,finalfit,lubridate,data.table,
                janitor,flextable,survival,survminer,rmdHelpers, ggrepel,
-               scales,RColorBrewer,GGally,randomForest, caret,DT, gtsummary,cardx,ggsurvfit,mice)
+               scales,RColorBrewer,GGally,randomForest, caret,DT, gtsummary,cardx,
+               ggsurvfit,mice)
 
 ```
 
@@ -313,7 +314,7 @@ fits <- stroke_data %>%
 
 #### Diagnose
 
-```{r}
+```{r extracting aics}
 # Examples of extracting metrics from fits and taking the mean
 ## AICs
 fits %>% 
@@ -323,7 +324,7 @@ fits %>%
   mean()
 ```
 
-```{r}
+```{r obtaining the c statistic}
 # C-statistic
 fits %>% 
   getfit() %>% 
@@ -334,7 +335,7 @@ fits %>%
 
 #### Analyse
 
-```{r}
+```{r pool the results of the model and visualise in an or plot}
 # Pool results
 fits_pool <- fits %>% 
   pool()
@@ -346,7 +347,7 @@ stroke_data %>%
 
 #### Pool
 
-```{r}
+```{r summarise log reg models that do not have and have imputed bmi}
 # Summarise and put in table
 fit_imputed <- fits_pool %>%                                  
   fit2df(estimate_name = "OR (multiple imputation)", exp = TRUE)
@@ -372,10 +373,9 @@ table_imputed <-
 table_imputed 
 ```
 
+#### Generating Data & Adding Imputed Values to Original Dataset
 
-
-```{r}
-
+```{r doing mice again to save and extract the data}
 explanatory <- c("id","bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
                  "work_type","residence_type","smoking_status")
 dependent <- "stroke_yn"
@@ -393,14 +393,33 @@ mice(m = 10, predictorMatrix = predM)
 
 
 completedData <- complete(fits, action = 1)
+```
+
+
+```{r scatterplot of original and imputed data}
+#scatter plot of original and imputed data with the magenta points being the imputed data points and the blue points being the observed values#
 
 xyplot(fits,bmi ~ age,pch=18,cex=1)
+```
 
+The above is a scatter plot of original and imputed data with the magenta points being the imputed data points and the blue points being the observed values. The matching shape is a good verification of the imputed values indeed being plausible.
+
+```{r density plot of observed and imputed values }
 densityplot(fits)
 ```
 
-```{r}
+The density of the imputed data for each imputed dataset is magenta and the density of the observed data is blue. Again, we expect the distributions to be similar.
+
+
+```{r extracting id and bmi and limiting to just ids wo valid bmi}
+
+ids_wo_bmi <- stroke_data %>% filter(is.na(bmi))
+
+ids_wo_bmi <- ids_wo_bmi$id
+
 imputed_bmi_values <- completedData %>% select(id, bmi)
+
+imputed_bmi_values <- imputed_bmi_values %>% filter(id %in% ids_wo_bmi)
 ```
 
 
