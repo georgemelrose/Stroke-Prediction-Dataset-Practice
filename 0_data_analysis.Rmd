@@ -123,6 +123,9 @@ stroke_data <- stroke_data %>% mutate(
   
 ```
 
+
+
+
 ### Handling Missingness
 
 ```{r checking missingness again after making variables numeric}
@@ -905,6 +908,149 @@ ggplot(ever_married_counts_w_stroke, aes(x = ever_married, y = patient_count, fi
     panel.grid.major = element_line(size = 0.1, linetype = 'dotted'),
     panel.grid.minor = element_blank()
   )
+
+```
+
+
+### Hypertension
+
+```{r counting the numbers and proportions of patients by hypertension}
+hypertension_counts <- stroke_data %>%
+  group_by(hypertension_yn) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+        percentage = signif(percentage, 3)) %>%
+  arrange(hypertension_yn)
+
+hypertension_counts_table <- hypertension_counts %>% rename("Percentage (%)" = percentage) %>% rename(
+"No.Patients" = patient_count) %>% rename("Hypertension?" = hypertension_yn)
+
+flextable(hypertension_counts_table)
+
+```
+
+
+```{r plotting distribution of patients across by hypertension}
+
+ggplot(hypertension_counts, aes(x = hypertension_yn, y = patient_count)) +
+  geom_col(fill = "blue", alpha = 0.8) +
+  geom_text(aes(label = patient_count), vjust = -0.5, size = 3.5, color = "darkblue") +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Number of Patients by Hypertension",
+       x = "Hypertension?",
+       y = "Number of Patients") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major = element_line(size = 0.1, linetype = 'dotted'),
+    panel.grid.minor = element_blank()
+  ) 
+
+```
+
+
+```{r making a hypertension counts table stratified by stroke yes or no}
+hypertension_counts_w_stroke <- stroke_data %>%
+  group_by(hypertension_yn,stroke_yn) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+                 percentage = signif(percentage, 3)) %>%
+  arrange(hypertension_yn)
+
+hypertension_counts_w_stroke_table <- hypertension_counts_w_stroke %>% rename("Percentage (%)" = percentage) %>% rename("No.Patients" = patient_count) %>% rename("Hypertension?" = hypertension_yn) %>% rename("Stroke (Yes/No)" = stroke_yn)
+
+flextable(hypertension_counts_w_stroke_table)
+```
+
+
+```{r plotting distribution of patients across hypertension and stroke categories}
+ggplot(hypertension_counts_w_stroke, aes(x = hypertension_yn, y = patient_count, fill = stroke_yn)) +
+  geom_col(position = "dodge", alpha = 0.8) +
+  geom_text(aes(label = patient_count), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5, size = 3.5) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Number of Patients by Hypertension Status and Stroke Status",
+       x = "Hypertension(?)",
+       y = "Number of Patients",
+       fill = "Stroke") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major = element_line(size = 0.1, linetype = 'dotted'),
+    panel.grid.minor = element_blank()
+  )
+
+```
+
+The proportion of patients with hypertension who had a stroke (13.3%) is 2.75x higher 
+than the proportion of patients without hypertension who had a stroke (4.82%).
+
+### Work Type
+
+```{r counting the numbers and proportions of patients by work type}
+work_counts <- stroke_data %>%
+  group_by(work_type) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+        percentage = signif(percentage, 3)) %>%
+  arrange(work_type)
+
+work_counts_table <- work_counts %>% rename("Percentage (%)" = percentage) %>% rename(
+"No.Patients" = patient_count) %>% rename("Work Type" = work_type)
+
+flextable(work_counts_table)
+
+```
+
+```{r doing ff labels for different variables, echo = FALSE}
+stroke_data$age_category <- stroke_data$age_category %>%
+  ff_label("Age(years)")
+
+stroke_data$bmi_category <- stroke_data$bmi_category %>%
+  ff_label("BMI")
+
+stroke_data$ever_married <- stroke_data$ever_married %>%
+  ff_label("Ever Married?")
+
+stroke_data$gender <- stroke_data$gender %>%
+  ff_label("Gender")
+
+stroke_data$residence_type <- stroke_data$residence_type %>%
+  ff_label("Residence Type")
+
+stroke_data$smoking_status <- stroke_data$smoking_status %>%
+  ff_label("Smoking Status")
+
+stroke_data$work_type <- stroke_data$work_type %>%
+  ff_label("Work Type")
+```
+
+### Chi-squared Tests
+
+```{r chi squared tests for explanatory variables and stroke}
+ stroke_data %>% 
+  summary_factorlist(dependent = "stroke_yn", 
+                     explanatory = 
+                       c("age_category", "bmi_category","ever_married","gender",
+                         "heart_disease_yn", "hypertension_yn","residence_type",
+                         "smoking_status","work_type"),
+                     p = TRUE) %>%
+     kable("html") %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center"
+  )
+
 
 ```
 
