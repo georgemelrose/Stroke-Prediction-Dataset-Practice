@@ -57,7 +57,7 @@ With the above in mind, here is the PPDAC plan for this project-
   
 * Evaluating aforementioned models using metrics like AUC-ROC.
 
-**Data**
+### Data
 This is a dataset of 5110 rows, each row representing 1 unique individual patient, and the following 12 columns:
 * **id -** unique identifier
 * **gender -** "Male", "Female" or "Other"
@@ -75,7 +75,7 @@ This is a dataset of 5110 rows, each row representing 1 unique individual patien
 
 ***Potential Challenges*** - Missingness in important variables like bmi and smoking_status. Imbalance in the target variable of stroke, there probably being a majority class for not having stroke so fitting a log.regression model and others may not work well. No time variables - they need to be simulated. 
 
-**Analysis**
+### Analysis
 
 1. **EDA** - Summarise and visualise important variables using tidyverse and finalfit. Assess relationships using finalfit and base R packages.
    
@@ -83,7 +83,7 @@ This is a dataset of 5110 rows, each row representing 1 unique individual patien
    
 3. **Prediction Models** - Several steps to this: feature engineering & data preprocessing; train/test split & cross-validation; model fitting and evaluation.
 
-**Conclusions (anticipated)** - 
+### Conclusions (anticipated) 
 
 ***Outcomes*** - Identifying key risk factors associated with stroke; developing a prediction model to assess stroke risk (with good accuracy/metrics); RMD HTML document summarising aforementioned outcomes with EDA and background to the subject given. 
 
