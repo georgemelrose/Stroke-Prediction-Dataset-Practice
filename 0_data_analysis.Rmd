@@ -18,7 +18,7 @@ knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
 pacman::p_load(tidyverse,icd,knitr,kableExtra,finalfit,lubridate,data.table,
                janitor,flextable,survival,survminer,rmdHelpers, ggrepel,
                scales,RColorBrewer,GGally,randomForest, caret,DT, gtsummary,cardx,
-               ggsurvfit,mice)
+               ggsurvfit,mice,patchwork)
 
 ```
 
@@ -1092,6 +1092,7 @@ ggplot(work_counts, aes(x = work_type, y = patient_count)) +
 
 ```
 
+
 ### Chi-squared & Fisher's Exact Tests
 
 ```{r doing ff labels for different variables, echo = FALSE}
@@ -1157,6 +1158,54 @@ stroke_data$work_type <- stroke_data$work_type %>%
   )
 
 
+```
+
+
+### Facetted Visualisations 
+
+```{r stroke outcomes and hypertension statuses facetted by age and gender}
+p1 <- stroke_data %>% 
+  ggplot(aes(x = hypertension_yn, fill=stroke_yn)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) +
+  facet_grid(gender ~ age_category) + 
+  theme(legend.position = "none")
+
+p2 <- stroke_data %>% 
+  ggplot(aes(x = hypertension_yn, fill=stroke_yn)) + 
+  geom_bar(position = position_fill(reverse = TRUE)) +
+  facet_grid(gender ~ age_category)+ 
+  theme(legend.position = "bottom")
+
+p1 / p2
+```
+
+
+```{r hypertension statuses facetted by stroke}
+p1 <- stroke_data %>% 
+  ggplot(aes(x = hypertension_yn, fill = stroke_yn)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) + 
+  theme(legend.position = "none")
+
+p2 <- stroke_data %>% 
+  ggplot(aes(x = hypertension_yn, fill = stroke_yn)) + 
+  geom_bar(position = position_fill(reverse = TRUE)) + 
+  ylab("proportion")
+
+p1 + p2
+```
+
+```{r ages facetted by stroke}
+p1 <- stroke_data %>% 
+  ggplot(aes(x = age_category, fill = stroke_yn)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) + 
+  theme(legend.position = "none")
+
+p2 <- stroke_data %>% 
+  ggplot(aes(x = age_category, fill = stroke_yn)) + 
+  geom_bar(position = position_fill(reverse = TRUE)) + 
+  ylab("proportion")
+
+p1 + p2
 ```
 
 ## Survival Analysis {.tabset .tabset-fade .tabset-pills}
@@ -1249,7 +1298,7 @@ survfit(Surv(follow_up_years, status) ~ smoking_status, data = stroke_data)
 fit_smoking <- survfit(Surv(follow_up_years, status) ~ smoking_status, data = stroke_data)
 ```
 
-```{r survival curve for age categories,fig.width=11.5,fig.height=5.3,fig.align = 'center'}
+```{r survival curve for smoking,fig.width=11.5,fig.height=5.3,fig.align = 'center'}
 
 legend_labels <- c("never smoked", "formerly smoked", "smokes")
 
@@ -1267,21 +1316,23 @@ ggsurvplot(
                   panel.background = element_blank(), # Remove panel background
                   plot.background = element_blank(),  # Remove plot background
                   axis.line = element_line(color = "black"), # Keep axis lines if desired
-                  axis.title = element_text(size = 15), # Increase axis title size
-                  axis.text = element_text(size = 12),  # Increase axis text size
-                  legend.text = element_text(size = 15), # Increase legend text size
-                  legend.title = element_text(size = 20), # Increase legend title size
-                  plot.title = element_text(size = 20), # Increase plot title size
-                  plot.subtitle = element_text(size = 15), # Increase plot subtitle size
-                  legend.key.size = unit(2, "lines") # Increase legend key size
+                  axis.title = element_text(size = 13), # Increase axis title size
+                  axis.text = element_text(size = 11),  # Increase axis text size
+                  legend.text = element_text(size = 13), # Increase legend text size
+                  legend.title = element_text(size = 16), # Increase legend title size
+                  plot.title = element_text(size = 14), # Increase plot title size
+                  plot.subtitle = element_text(size = 13), # Increase plot subtitle size
+                  legend.key.size = unit(1.5, "lines") # Increase legend key size
                 ),
            risk.table = TRUE,
            risk.table.y.text.col = TRUE,
-           risk.table.height = 0.2,
+           risk.table.height = 0.35,
            risk.table.y.text = FALSE,
            conf.int = TRUE, cumcensor = FALSE, conf.int.style = "step",pval.coord = c(0, 0.76), pval.method = TRUE, pval.method.coord = c(0, 0.72),
            legend.labs = legend_labels,
-           legend.title = "Smoking Status",pval.size = 5, pval.method.size = 5 # Set legend title
+           legend.title = "Smoking Status",pval.size = 5, pval.method.size = 5, # Set legend title
+             font.x = c(0, "plain", "white") # Removes x-axis text from KM plot
+
 )
 ```
 
@@ -1323,21 +1374,22 @@ ggsurvplot(
                   panel.background = element_blank(), # Remove panel background
                   plot.background = element_blank(),  # Remove plot background
                   axis.line = element_line(color = "black"), # Keep axis lines if desired
-                  axis.title = element_text(size = 15), # Increase axis title size
-                  axis.text = element_text(size = 12),  # Increase axis text size
-                  legend.text = element_text(size = 15), # Increase legend text size
-                  legend.title = element_text(size = 20), # Increase legend title size
-                  plot.title = element_text(size = 20), # Increase plot title size
-                  plot.subtitle = element_text(size = 15), # Increase plot subtitle size
-                  legend.key.size = unit(2, "lines") # Increase legend key size
+                  axis.title = element_text(size = 13), # Increase axis title size
+                  axis.text = element_text(size = 11),  # Increase axis text size
+                  legend.text = element_text(size = 13), # Increase legend text size
+                  legend.title = element_text(size = 16), # Increase legend title size
+                  plot.title = element_text(size = 14), # Increase plot title size
+                  plot.subtitle = element_text(size = 13), # Increase plot subtitle size
+                  legend.key.size = unit(1.5, "lines") # Increase legend key size
                 ),
            risk.table = TRUE,
            risk.table.y.text.col = TRUE,
-           risk.table.height = 0.2,
+           risk.table.height = 0.35,
            risk.table.y.text = FALSE,
            conf.int = TRUE, cumcensor = FALSE, conf.int.style = "step",pval.coord = c(0, 0.76), pval.method = TRUE, pval.method.coord = c(0, 0.72),
            legend.labs = legend_labels,
            legend.title = "Age Category",pval.size = 5, pval.method.size = 5 # Set legend title
+
 )
 ```
 
