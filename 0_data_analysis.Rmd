@@ -1249,7 +1249,10 @@ survfit(Surv(follow_up_years, status) ~ smoking_status, data = stroke_data)
 fit_smoking <- survfit(Surv(follow_up_years, status) ~ smoking_status, data = stroke_data)
 ```
 
-```{r survival curve for smoking status, out.width=10, out.height=10}
+```{r survival curve for age categories,fig.width=11.5,fig.height=5.3,fig.align = 'center'}
+
+legend_labels <- c("never smoked", "formerly smoked", "smokes")
+
 ggsurvplot(
   fit_smoking,
   xlim = c(0, 5),
@@ -1259,32 +1262,26 @@ ggsurvplot(
   ylab = "Survival Probability",
   pval = TRUE,
   ggtheme = theme_minimal() + theme(
-    panel.grid.major = element_blank(), # Remove major grid lines
-    panel.grid.minor = element_blank(), # Remove minor grid lines
-    panel.background = element_blank(), # Remove panel background
-    plot.background = element_blank(),  # Remove plot background
-    axis.line = element_line(color = "black"), # Keep axis lines
-    axis.title = element_text(size = 14), # Increase axis title size
-    axis.text = element_text(size = 12),  # Increase axis text size
-    legend.text = element_text(size = 15), # Increase legend text size
-    legend.title = element_text(size = 20), # Increase legend title size
-    plot.title = element_text(size = 20), # Increase plot title size
-    plot.subtitle = element_text(size = 13), # Increase plot subtitle size
-    legend.key.size = unit(1, "lines")      # Adjust legend key size
-  ),
-  risk.table = TRUE,
-  risk.table.y.text.col = TRUE,
-  risk.table.height = 0.2,                 # Slightly increase height of risk table
-  risk.table.y.text = TRUE,
-  conf.int = TRUE,
-  cumcensor = FALSE,
-  conf.int.style = "step",
-  risk.table.fontsize = 4,                 # Reduce risk table font size
-  risk.table.title = "Subjects at Risk",   # Set risk table title
-  tables.theme = theme_minimal() + theme(
-    axis.text.x = element_text(size = 12), # Adjust x-axis text in risk table
-    axis.text.y = element_text(size = 12)  # Adjust y-axis text in risk table
-  )
+                  panel.grid.major = element_blank(), # Remove major grid lines
+                  panel.grid.minor = element_blank(), # Remove minor grid lines
+                  panel.background = element_blank(), # Remove panel background
+                  plot.background = element_blank(),  # Remove plot background
+                  axis.line = element_line(color = "black"), # Keep axis lines if desired
+                  axis.title = element_text(size = 15), # Increase axis title size
+                  axis.text = element_text(size = 12),  # Increase axis text size
+                  legend.text = element_text(size = 15), # Increase legend text size
+                  legend.title = element_text(size = 20), # Increase legend title size
+                  plot.title = element_text(size = 20), # Increase plot title size
+                  plot.subtitle = element_text(size = 15), # Increase plot subtitle size
+                  legend.key.size = unit(2, "lines") # Increase legend key size
+                ),
+           risk.table = TRUE,
+           risk.table.y.text.col = TRUE,
+           risk.table.height = 0.2,
+           risk.table.y.text = FALSE,
+           conf.int = TRUE, cumcensor = FALSE, conf.int.style = "step",pval.coord = c(0, 0.76), pval.method = TRUE, pval.method.coord = c(0, 0.72),
+           legend.labs = legend_labels,
+           legend.title = "Smoking Status",pval.size = 5, pval.method.size = 5 # Set legend title
 )
 ```
 
@@ -1302,15 +1299,15 @@ coxph(Surv(follow_up_years, status) ~ smoking_status, data = stroke_data) %>%
 
 ### Age
 
-```{r comparing survival time for smoking status, echo=FALSE}
+```{r comparing survival time for age categories, echo=FALSE}
 
 survfit(Surv(follow_up_years, status) ~ age_category, data = stroke_data)
 
 fit_age <- survfit(Surv(follow_up_years, status) ~ age_category, data = stroke_data)
 ```
 
-```{r survival curve for smoking status, out.width=10, out.height=10}
-legend_labels <- c("never smoked","formerly smoked","smokes")
+```{r survival curve for age categories,fig.width=11.5,fig.height=5.3,fig.align = 'center'}
+legend_labels <- c("≤60", ">60")
 
 ggsurvplot(
   fit_age,
@@ -1321,42 +1318,27 @@ ggsurvplot(
   ylab = "Survival Probability",
   pval = TRUE,
   ggtheme = theme_minimal() + theme(
-    panel.grid.major = element_blank(), # Remove major grid lines
-    panel.grid.minor = element_blank(), # Remove minor grid lines
-    panel.background = element_blank(), # Remove panel background
-    plot.background = element_blank(),  # Remove plot background
-    axis.line = element_line(color = "black"), # Keep axis lines
-    axis.title = element_text(size = 14), # Increase axis title size
-    axis.text = element_text(size = 12),  # Increase axis text size
-    legend.text = element_text(size = 15), # Increase legend text size
-    legend.title = element_text(size = 20), # Increase legend title size
-    plot.title = element_text(size = 20), # Increase plot title size
-    plot.subtitle = element_text(size = 13), # Increase plot subtitle size
-    legend.key.size = unit(1, "lines")      # Adjust legend key size
-  ),
-  risk.table = TRUE,
-  risk.table.y.text.col = TRUE,
-  risk.table.height = 0.2,                 # Slightly increase height of risk table
-  risk.table.y.text = FALSE,
-  conf.int = TRUE,
-  cumcensor = FALSE,
-  conf.int.style = "step",
-  risk.table.fontsize = 4,                 # Reduce risk table font size
-  risk.table.title = "Subjects at Risk",   # Set risk table title
-  tables.theme = theme_minimal() + theme(
-    axis.text.x = element_text(size = 12), # Adjust x-axis text in risk table
-    axis.text.y = element_text(size = 12),
-    # Adjust y-axis text in risk table
-    pval.coord = c(0, 0.76), pval.method = TRUE, pval.method.coord = c(0, 0.75),
-    legend.labs = legend_labels,
-           legend.title = "Smoking Status",pval.size = 10, pval.method.size = 10 # Set legend title
-  )
+                  panel.grid.major = element_blank(), # Remove major grid lines
+                  panel.grid.minor = element_blank(), # Remove minor grid lines
+                  panel.background = element_blank(), # Remove panel background
+                  plot.background = element_blank(),  # Remove plot background
+                  axis.line = element_line(color = "black"), # Keep axis lines if desired
+                  axis.title = element_text(size = 15), # Increase axis title size
+                  axis.text = element_text(size = 12),  # Increase axis text size
+                  legend.text = element_text(size = 15), # Increase legend text size
+                  legend.title = element_text(size = 20), # Increase legend title size
+                  plot.title = element_text(size = 20), # Increase plot title size
+                  plot.subtitle = element_text(size = 15), # Increase plot subtitle size
+                  legend.key.size = unit(2, "lines") # Increase legend key size
+                ),
+           risk.table = TRUE,
+           risk.table.y.text.col = TRUE,
+           risk.table.height = 0.2,
+           risk.table.y.text = FALSE,
+           conf.int = TRUE, cumcensor = FALSE, conf.int.style = "step",pval.coord = c(0, 0.76), pval.method = TRUE, pval.method.coord = c(0, 0.72),
+           legend.labs = legend_labels,
+           legend.title = "Age Category",pval.size = 5, pval.method.size = 5 # Set legend title
 )
-```
-
-```{r}
-coxph(Surv(follow_up_years, stroke) ~ age_category, data = stroke_data) %>% 
-  tbl_regression(exp = TRUE) 
 ```
 
 
