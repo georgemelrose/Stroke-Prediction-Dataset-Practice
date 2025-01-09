@@ -124,6 +124,14 @@ stroke_data <- stroke_data %>% mutate(
 ```
 
 
+```{r marking unknowns in smoking status as na}
+# Recode 'Unknown' to NA in all relevant columns
+stroke_data$smoking_status <- factor(stroke_data$smoking_status) # Ensure smoking_status is a factor
+stroke_data$smoking_status[stroke_data$smoking_status == "Unknown"] <- NA
+
+# Optionally drop the 'Unknown' level from the factor levels
+stroke_data$smoking_status <- droplevels(stroke_data$smoking_status)
+```
 
 
 ### Handling Missingness
@@ -192,6 +200,8 @@ stroke_data %>%
 
 ```
 
+#### BMI
+
 ```{r checking for associations between missing and observed data part 1}
 explanatory <- c("bmi","gender","hypertension_yn","ever_married")
 dependent <- "stroke_yn"
@@ -229,6 +239,8 @@ Looking at the above 3 plots, the following can be observed:
 
 * Given the above info., we can start to conclude that the BMI variable missingness is MAR - *missingness in a particular variable that has an association with one or more other variables in the dataset*.
 
+
+
 The relevant variables that have an association with missingness in bmi are selected for a single missing pairs plot below.
 
 ```{r generating a missing pairs plot of associated variables strokeyn heartdisease hypertension age}
@@ -241,8 +253,25 @@ stroke_data %>%
 
 ```
 
+#### Smoking Status
 
+```{r checking for associations between missing and observed data part 1}
+explanatory <- c("smoking_status", "bmi","gender","hypertension_yn")
+dependent <- "stroke_yn"
 
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed data part 1}
+explanatory <- c("smoking_status", "bmi","work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
 
 ```{r generating necessary factor variables}
 
@@ -485,7 +514,7 @@ stroke_data <- stroke_data %>% mutate(
     bmi >= 25 & bmi <= 29.9 ~ "Overweight",
     bmi >= 30 ~ "Obese",
     TRUE ~ NA_character_
-  ) %>% factor(levels = c("Underweight", "Normal weight", "Overweight", "Obese"))
+  ) %>% factor(levels = c("Normal weight", "Underweight", "Overweight", "Obese"))
   
 )
   
@@ -526,9 +555,31 @@ datatable(stroke_data[1:10, ],options = list(scrollX = TRUE))
 
 ## Exploratory Data Analysis - Summary Statistics {.tabset .tabset-fade .tabset-pills}
 
+```{r reorder factor variable levels, echo=FALSE}
+#work type#
+
+stroke_data$work_type <- factor(stroke_data$work_type , levels = c("Private", "Govt_job", "Self-employed")) %>% relevel(ref = "Private")
+
+levels(stroke_data$work_type)
+
+#smoking status#
+
+stroke_data$smoking_status <- factor(stroke_data$smoking_status , levels = c("never smoked", "formerly smoked", "smokes")) %>% relevel(ref = "never smoked")
+
+levels(stroke_data$smoking_status)
+
+#residence type#
+
+stroke_data$residence_type <- factor(stroke_data$residence_type , levels = c("Urban", "Rural"))
+
+levels(stroke_data$residence_type)
+
+```
+
+
 ### Age
 
-```{r}
+```{r removing child age category}
 #dropping children from age category#
 
 stroke_data$age_category <- droplevels(stroke_data$age_category)
@@ -1081,7 +1132,7 @@ stroke_data$work_type <- stroke_data$work_type %>%
      kable("html") %>%
   kable_styling(
     bootstrap_options = c("striped", "hover", "condensed"),
-    full_width = FALSE,
+    full_width = TRUE,
     position = "center"
   )
 
