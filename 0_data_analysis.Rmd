@@ -19,7 +19,7 @@ pacman::p_load(tidyverse,icd,knitr,kableExtra,finalfit,lubridate,data.table,
                janitor,flextable,survival,survminer,rmdHelpers, ggrepel,
                scales,RColorBrewer,GGally,randomForest, caret,DT, gtsummary,cardx,
                ggsurvfit,mice,patchwork,rsample, parsnip,recipes, workflows,tune,
-               ranger,yardstick,vip,tidymodels,naivebayes,class)
+               ranger,yardstick,vip,tidymodels,naivebayes,class, Metrics)
 
 ```
 
@@ -1718,6 +1718,69 @@ forest_importances$Std <- std
 head(forest_importances)
 ```
 
+
+```{r}
+
+# Predict on the testing dataset
+rf_testing_results <- rf_fit %>%
+  predict(new_data = stroke_testing) %>%  # Generate predictions
+  bind_cols(stroke_testing %>% select(stroke_yn))  # Add the true outcome values for comparison
+
+# View the first few rows of the testing results
+head(rf_testing_results)
+
+# Convert both `truth` and `estimate` to factors with the same levels
+rf_testing_results <- rf_testing_results %>%
+  mutate(
+    stroke_yn = as.factor(stroke_yn),
+    .pred_class = as.factor(.pred_class)
+  )
+
+# Ensure the levels of `truth` and `estimate` match
+levels(rf_testing_results$stroke_yn) <- levels(rf_testing_results$.pred_class)
+
+# Compute confusion matrix
+confusion_matrix <- rf_testing_results %>%
+  conf_mat(truth = stroke_yn, estimate = .pred_class)
+
+# View confusion matrix
+confusion_matrix
+# Calculate other performance metrics
+# Accuracy
+accuracy <- rf_testing_results %>%
+  metrics(truth = stroke_yn, estimate = .pred_class) %>%
+  filter(.metric == "accuracy")
+accuracy
+
+# Precision, Recall, F1 Score
+classification_metrics <- rf_testing_results %>%
+  metrics(truth = stroke_yn, estimate = .pred_class)
+classification_metrics
+
+# ROC AUC (requires probabilities)
+rf_testing_probs <- rf_fit %>%
+  predict(new_data = stroke_testing, type = "prob") %>%
+  bind_cols(stroke_testing %>% select(stroke_yn))
+
+# Convert `stroke_yn` to a factor
+rf_testing_probs <- rf_testing_probs %>%
+  mutate(stroke_yn = as.factor(stroke_yn))
+
+# Check levels to ensure "Yes" and "No" are present
+levels(rf_testing_probs$stroke_yn)
+
+# Compute the ROC AUC
+roc_auc <- rf_testing_probs %>%
+  roc_auc(truth = stroke_yn, .pred_Yes)  # Assuming "Yes" is the positive class
+
+# Display ROC AUC result
+roc_auc
+
+```
+
+
+
+
 ### Naive Bayes Classification
 
 
@@ -1732,6 +1795,7 @@ plot(nb_model)
 # fit the model on training data
 nb_training_result <- predict(nb_model, stroke_training, type = "prob")
 ```
+
 ```{r}
 head(cbind(nb_training_result , stroke_training$stroke_yn))
 ```
@@ -1747,6 +1811,41 @@ p1 <- predict(nb_model, stroke_training)
 1 - sum(diag(tab1)) / sum(tab1)
 ```
 Naives Bayes has an accuracy of 99.9% on the training data.
+
+
+```{r}
+# --- Extension to Testing Data ---
+
+# Predict probabilities on the testing data
+nb_testing_probs <- predict(nb_model, stroke_testing, type = "prob")
+
+# Predict classes on the testing data
+nb_testing_preds <- predict(nb_model, stroke_testing)
+
+# Confusion matrix for testing data
+(tab2 <- table(Predicted = nb_testing_preds, Actual = stroke_testing$stroke_yn))
+
+# Calculate testing error rate
+testing_error_rate <- 1 - sum(diag(tab2)) / sum(tab2)
+testing_error_rate
+
+# Evaluate ROC AUC on the testing data
+
+
+# Convert testing data predictions into a dataframe with actual values and predicted probabilities
+nb_testing_results <- cbind(stroke_testing, nb_testing_probs)
+
+# Ensure stroke_yn is a factor
+nb_testing_results <- nb_testing_results %>%
+  mutate(stroke_yn = as.factor(stroke_yn))
+
+# Compute ROC AUC
+roc_auc <- nb_testing_results %>%
+  roc_auc(truth = stroke_yn,Yes)  # Assuming "Yes" is the positive class
+
+# Display ROC AUC
+roc_auc
+```
 
 ### K-Nearest Neighbor Classfication
 
@@ -1766,19 +1865,243 @@ ff_glimpse(stroke_training)
 
 ff_glimpse(stroke_testing)
 ```
+```{r making categorical variables numeric for knn}
+# Convert categorical variables into numeric format (one-hot encoding)
+stroke_training_numeric <- stroke_training %>%
+  # Convert categorical variables into numeric format (1-hot encoding)
+  mutate(
+    gender = as.numeric(factor(gender)),
+    ever_married = as.numeric(factor(ever_married)),
+    work_type = as.numeric(factor(work_type)),
+    residence_type = as.numeric(factor(residence_type)),
+    smoking_status = as.numeric(factor(smoking_status)),
+    # Convert stroke_yn to 1 for "Yes" and 0 for "No"
+    stroke_yn = ifelse(stroke_yn == "Yes", 1, 0)
+  )
+
+# Check the transformed data
+head(stroke_training_numeric)
+
+# Convert categorical variables into numeric format (one-hot encoding)
+stroke_testing_numeric <- stroke_testing %>%
+  # Convert categorical variables into numeric format (1-hot encoding)
+  mutate(
+    gender = as.numeric(factor(gender)),
+    ever_married = as.numeric(factor(ever_married)),
+    work_type = as.numeric(factor(work_type)),
+    residence_type = as.numeric(factor(residence_type)),
+    smoking_status = as.numeric(factor(smoking_status)),
+    # Convert stroke_yn to 1 for "Yes" and 0 for "No"
+    stroke_yn = ifelse(stroke_yn == "Yes", 1, 0)
+  )
+
+
+# Check the transformed data
+head(stroke_testing_numeric)
+```
 
 
 ```{r}
 # Fitting KNN Model to training dataset
 knn_model <- knn(
-  train = stroke_training,
-  test = stroke_testing,
-  cl = stroke_training$stroke_yn,
-  k = 1
+  train = stroke_training_numeric,
+  test = stroke_testing_numeric,
+  cl = stroke_training_numeric$stroke_yn,
+  k = 1,
+  prob = TRUE
 )
 head(knn_model)
 ```
 
+```{r}
+# Confusion Matrix
+cm <- table(stroke_testing_numeric$stroke_yn, knn_model)
+cm
+```
+```{r}
+1 - sum(diag(cm)) / sum(cm)
+```
+
+```{r}
+# Confusion Matrix
+cm <- table(stroke_testing_numeric$stroke_yn, knn_model)
+print(cm)
+
+# Calculate Accuracy
+accuracy <- sum(diag(cm)) / sum(cm)
+cat("Accuracy:", accuracy, "\n")
+
+# Calculate Precision and Recall for 'Yes' (1, stroke) class
+precision_yes <- cm["1", "1"] / sum(cm[, "1"])
+recall_yes <- cm["1", "1"] / sum(cm["1", ])
+cat("Precision (Yes, 1):", precision_yes, "\n")
+cat("Recall (Yes, 1):", recall_yes, "\n")
+
+# Calculate F1 Score for 'Yes' (1) class
+f1_yes <- 2 * (precision_yes * recall_yes) / (precision_yes + recall_yes)
+cat("F1 Score (Yes, 1):", f1_yes, "\n")
+
+# Calculate Precision and Recall for 'No' (0, no stroke) class
+precision_no <- cm["0", "0"] / sum(cm[, "0"])
+recall_no <- cm["0", "0"] / sum(cm["0", ])
+cat("Precision (No, 0):", precision_no, "\n")
+cat("Recall (No, 0):", recall_no, "\n")
+
+# Calculate F1 Score for 'No' (0) class
+f1_no <- 2 * (precision_no * recall_no) / (precision_no + recall_no)
+cat("F1 Score (No, 0):", f1_no, "\n")
+```
+
+```{r}
+attributes(knn_model)$prob
+
+library(pROC)
+
+roc(stroke_testing$stroke_yn, attributes(knn_model)$prob)
+
+plot(roc(stroke_testing$stroke_yn, attributes(knn_model)$prob),
+     print.thres = T,
+     print.auc=T)
+```
+
+```{r}
+knn_model <- knn(
+  train = stroke_training_numeric,
+  test = stroke_testing_numeric,
+  cl = stroke_training_numeric$stroke_yn,
+  k = 499,
+  prob = TRUE
+)
+head(knn_model)
+
+roc(stroke_testing$stroke_yn, attributes(knn_model)$prob)
+
+plot(roc(stroke_testing$stroke_yn, attributes(knn_model)$prob),
+     print.thres = T,
+     print.auc=T)
+```
+```{r}
+roc(stroke_testing$stroke_yn, attributes(knn_model)$prob)
+
+```
+
+```{r}
+# Compute ROC and AUC (you need probability estimates for AUC)
+# To compute AUC, you first need predicted probabilities, not just class predictions
+# If your KNN model supports probability output (like with kNN from `class` package), 
+# you'd use the prob argument to get probabilities for each class.
+# For now, let's assume you're using the class predictions.
+# Install the pROC package if you haven't already:
+# install.packages("pROC")
+library(pROC)
+
+# Get predicted probabilities (assuming you're using knn from `class` package with probability = TRUE)
+knn_prob <- knn(
+  train = stroke_training_numeric,
+  test = stroke_testing_numeric,
+  cl = stroke_training_numeric$stroke_yn,
+  k = 5,
+  prob = TRUE
+)
+
+# Convert the probabilities into a data frame (for ROC calculation)
+knn_prob_df <- attr(knn_prob, "prob")  # Assuming this gives you probabilities for each class
+
+# For AUC, let's consider 'Yes' (1, stroke) class as the positive class
+roc_curve <- roc(stroke_testing_numeric$stroke_yn, knn_prob_df[, "1"])  # Assuming '1' is the positive class
+auc_value <- auc(roc_curve)
+cat("AUC:", auc_value, "\n")
+
+```
+
+
+
+
+
+
+### Evaluating and Selecting Models
+
+```{r}
+# Random Forest Model
+
+rf_training_results <- rf_training_results %>%
+  mutate(truth = as.numeric(truth), .pred_class = as.numeric(.pred_class))
+
+# to calculate accuracy
+Metrics::accuracy(rf_training_results$.pred_class, rf_training_results$truth)
+
+# to calculate recall
+Metrics::recall(rf_training_results$.pred_class, rf_training_results$truth)
+
+# to calculate precision
+Metrics::precision(rf_training_results$.pred_class, rf_training_results$truth)
+
+# to calculate f1_score
+Metrics::f1(rf_training_results$.pred_class, rf_training_results$truth)
+
+# to calculate auc
+Metrics::auc(rf_training_results$.pred_class, rf_training_results$truth)
+
+# to calculate rmse
+Metrics::rmse(rf_training_results$.pred_class, rf_training_results$truth)
+```
+
+```{r}
+# Naive Bayes Classification
+
+stroke_training$stroke_yn <- as.numeric(stroke_training$stroke_yn)
+stroke_training$stroke_yn <- stroke_training$stroke_yn - 1
+
+p1 <- as.numeric(p1)
+p1 <- p1 - 1
+
+# to calculate accuracy
+Metrics::accuracy(p1, stroke_training$stroke_yn)
+
+# to calculate recall
+Metrics::recall(p1, stroke_training$stroke_yn)
+
+# to calculate precision
+Metrics::precision(p1, stroke_training$stroke_yn)
+
+# to calculate f1_score
+Metrics::f1(p1, stroke_training$stroke_yn)
+
+# to calculate auc
+Metrics::auc(p1, stroke_training$stroke_yn)
+
+# to calculate rmse
+Metrics::rmse(p1, stroke_training$stroke_yn)
+```
+```{r}
+# K-Nearest Neighbor classification (test results)
+
+# stroke_testing$stroke_yn <- as.numeric(stroke_testing$stroke_yn)
+# stroke_testing$stroke_yn <- stroke_testing$stroke_yn - 1
+# 
+# knn_model <- as.numeric(knn_model)
+# 
+# knn_model <- knn_model- 1
+
+# to calculate accuracy
+Metrics::accuracy(knn_model, stroke_testing_numeric$stroke_yn)
+
+# to calculate recall
+Metrics::recall(knn_model, stroke_testing_numeric$stroke_yn)
+
+# to calculate precision
+Metrics::precision(knn_model, stroke_testing_numeric$stroke_yn)
+
+# to calculate f1_score
+Metrics::f1(knn_model, stroke_testing_numeric$stroke_yn)
+
+# to calculate auc
+Metrics::auc(knn_model, stroke_testing_numeric$stroke_yn)
+
+
+# to calculate rmse
+Metrics::rmse(knn_model, stroke_testing_numeric$stroke_yn)
+```
 
 ```{r ci plot for all strokes}
 # ci_fit <- cuminc(stroke_data$follow_up_years , stroke_data$status)
