@@ -18,7 +18,8 @@ knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
 pacman::p_load(tidyverse,icd,knitr,kableExtra,finalfit,lubridate,data.table,
                janitor,flextable,survival,survminer,rmdHelpers, ggrepel,
                scales,RColorBrewer,GGally,randomForest, caret,DT, gtsummary,cardx,
-               ggsurvfit,mice,patchwork)
+               ggsurvfit,mice,patchwork,rsample, parsnip,recipes, workflows,tune,
+               ranger,yardstick,vip)
 
 ```
 
@@ -1578,6 +1579,142 @@ tab[[2]] %>% knitr::kable()
 
 
 ## Prediction Modelling {.tabset .tabset-fade .tabset-pills}
+
+### Preprocessing data
+
+```{r split data into test and train}
+set.seed(1234)
+
+
+stroke_split <- initial_split(stroke_data, prop = 0.8)
+# train_data
+stroke_training <- training(stroke_split)
+# test_data
+stroke_testing <- testing(stroke_split)
+```
+
+
+```{r removing unecessary variables}
+stroke_training <- stroke_training %>% select(-id, -hypertension_yn, -heart_disease_yn,
+                                              -age_category, -bmi_category,-stroke,
+                                              -follow_up_time_days,-follow_up_years,
+                                              -status)
+
+stroke_testing <- stroke_testing %>% select(-id, -hypertension_yn, -heart_disease_yn,
+                                              -age_category, -bmi_category,-stroke,
+                                            -follow_up_time_days,-follow_up_years,
+                                              -status)
+```
+
+
+### Random Forest
+
+```{r}
+set.seed(123)
+
+stroke_cv <- vfold_cv(stroke_training)
+
+rf_model <-
+  rand_forest() %>%
+  set_args(mtry = tune(), trees = tune()) %>%
+  set_engine("ranger", importance = "impurity") %>%
+  # binary classification mode
+  set_mode("classification")
+
+
+stroke_recipe <-
+  # which consists of the formula (outcome ~ predictors)
+  recipe(stroke_yn ~ .,
+    data = stroke_training
+  )
+
+rf_workflow <- workflow() %>%
+  add_recipe(stroke_recipe) %>%
+  add_model(rf_model)
+
+rf_grid <- expand.grid(mtry = c(3, 4, 5), trees = c(100, 500))
+
+set.seed(125)
+rf_tune_results <- rf_workflow %>%
+ tune_grid(
+    resamples = stroke_cv,
+    grid = rf_grid  )
+
+
+rf_tune_results %>%
+  collect_metrics()
+
+rf_model_final <- rf_tune_results %>%
+  select_best(metric = "accuracy")
+rf_model_final
+
+rf_workflow <- rf_workflow %>%
+  finalize_workflow(rf_model_final)
+
+rf_fit <- rf_workflow %>%
+  fit(data = stroke_training)
+
+rf_fit <- rf_workflow %>%
+ fit(data = stroke_training)
+
+rf_fit
+
+rf_training_results <- rf_fit %>%
+  predict(new_data = stroke_training) %>%
+  mutate(truth = stroke_training$stroke_yn)
+
+head(rf_training_results)
+
+rf_training_results <- rf_fit %>%
+  predict(new_data = stroke_training) %>%
+  mutate(truth = stroke_training$stroke_yn)
+
+head(rf_training_results)
+
+# evaluate the model
+
+rsq_rf <- rf_training_results %>%
+  mutate(truth = as.numeric(truth), .pred_class = as.numeric(.pred_class)) %>%
+  rsq(
+    truth = truth,
+    estimate = .pred_class
+  )
+
+rmse_rf <- rf_training_results %>%
+  mutate(truth = as.numeric(truth), .pred_class = as.numeric(.pred_class)) %>%
+  yardstick::rmse(
+    truth = truth,
+    estimate = .pred_class
+  )
+rsq_rf
+rmse_rf
+
+# Accuracy results
+rf_training_results %>% count(.pred_class, truth)
+```
+
+```{r}
+# Extract feature importance from the fitted random forest model
+importances <- rf_fit %>%
+  extract_fit_parsnip() %>%
+  vip::vi()  # Using the 'vip' package to extract feature importance
+
+# Convert the importances into a dataframe
+forest_importances <- data.frame(Feature = importances$Variable,
+                                 Importance = importances$Importance)
+
+# Calculate standard deviation of feature importance (if needed)
+# Using the 'vip' package, we can retrieve the importance standard errors for the features
+std <- importances$SE  # Standard errors of the importance values
+
+# Add standard deviation to the dataframe
+forest_importances$Std <- std
+
+# View the feature importances with standard errors
+head(forest_importances)
+```
+
+
 
 ```{r ci plot for all strokes}
 # ci_fit <- cuminc(stroke_data$follow_up_years , stroke_data$status)
