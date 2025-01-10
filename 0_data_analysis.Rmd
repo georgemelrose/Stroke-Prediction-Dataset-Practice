@@ -19,7 +19,7 @@ pacman::p_load(tidyverse,icd,knitr,kableExtra,finalfit,lubridate,data.table,
                janitor,flextable,survival,survminer,rmdHelpers, ggrepel,
                scales,RColorBrewer,GGally,randomForest, caret,DT, gtsummary,cardx,
                ggsurvfit,mice,patchwork,rsample, parsnip,recipes, workflows,tune,
-               ranger,yardstick,vip,tidymodels,naivebayes)
+               ranger,yardstick,vip,tidymodels,naivebayes,class)
 
 ```
 
@@ -1745,6 +1745,38 @@ p1 <- predict(nb_model, stroke_training)
 
 ```{r}
 1 - sum(diag(tab1)) / sum(tab1)
+```
+Naives Bayes has an accuracy of 99.9% on the training data.
+
+### K-Nearest Neighbor Classfication
+
+```{r ensuring there are no nas before doing knn, echo=FALSE}
+ff_glimpse(stroke_training)
+
+ff_glimpse(stroke_testing)
+
+stroke_training <- stroke_training %>% filter(!is.na(work_type)) 
+
+stroke_testing <- stroke_testing %>% filter(!is.na(work_type))
+```
+
+
+```{r double checking there are no nas before doing knn, echo=FALSE}
+ff_glimpse(stroke_training)
+
+ff_glimpse(stroke_testing)
+```
+
+
+```{r}
+# Fitting KNN Model to training dataset
+knn_model <- knn(
+  train = stroke_training,
+  test = stroke_testing,
+  cl = stroke_training$stroke_yn,
+  k = 1
+)
+head(knn_model)
 ```
 
 
