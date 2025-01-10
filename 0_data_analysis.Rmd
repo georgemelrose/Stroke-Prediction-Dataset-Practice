@@ -19,7 +19,7 @@ pacman::p_load(tidyverse,icd,knitr,kableExtra,finalfit,lubridate,data.table,
                janitor,flextable,survival,survminer,rmdHelpers, ggrepel,
                scales,RColorBrewer,GGally,randomForest, caret,DT, gtsummary,cardx,
                ggsurvfit,mice,patchwork,rsample, parsnip,recipes, workflows,tune,
-               ranger,yardstick,vip)
+               ranger,yardstick,vip,tidymodels,naivebayes)
 
 ```
 
@@ -1610,87 +1610,91 @@ stroke_testing <- stroke_testing %>% select(-id, -hypertension_yn, -heart_diseas
 ### Random Forest
 
 ```{r}
+# Setting a seed to ensure reproducibility of results
 set.seed(123)
 
+# Create a cross-validation object for 5-fold cross-validation
 stroke_cv <- vfold_cv(stroke_training)
 
+# Define the Random Forest model with tuning parameters (mtry and trees)
 rf_model <-
   rand_forest() %>%
-  set_args(mtry = tune(), trees = tune()) %>%
-  set_engine("ranger", importance = "impurity") %>%
-  # binary classification mode
-  set_mode("classification")
+  set_args(mtry = tune(), trees = tune()) %>%  # Tuning mtry (number of predictors) and trees (number of trees)
+  set_engine("ranger", importance = "impurity") %>%  # Use ranger engine and calculate importance by impurity
+  set_mode("classification")  # Set the model for classification (binary outcome: stroke or no stroke)
 
-
+# Specify the recipe for preprocessing (outcome ~ predictors)
 stroke_recipe <-
-  # which consists of the formula (outcome ~ predictors)
-  recipe(stroke_yn ~ .,
+  recipe(stroke_yn ~ .,  # Define the formula: outcome is 'stroke_yn', all other columns are predictors
     data = stroke_training
   )
 
+# Combine the recipe and model into a workflow
 rf_workflow <- workflow() %>%
-  add_recipe(stroke_recipe) %>%
-  add_model(rf_model)
+  add_recipe(stroke_recipe) %>%  # Add preprocessing recipe
+  add_model(rf_model)  # Add the random forest model
 
+# Create a grid for hyperparameter tuning: mtry and trees values to explore
 rf_grid <- expand.grid(mtry = c(3, 4, 5), trees = c(100, 500))
 
+# Set the seed again for reproducibility and perform hyperparameter tuning
 set.seed(125)
 rf_tune_results <- rf_workflow %>%
- tune_grid(
-    resamples = stroke_cv,
-    grid = rf_grid  )
+  tune_grid(  # Perform grid search cross-validation
+    resamples = stroke_cv,  # Use the 5-fold cross-validation splits created above
+    grid = rf_grid  # Use the parameter grid defined above
+  )
 
-
+# Collect the performance metrics from the tuning results (e.g., accuracy)
 rf_tune_results %>%
   collect_metrics()
 
+# Select the best model based on accuracy (higher accuracy is better)
 rf_model_final <- rf_tune_results %>%
-  select_best(metric = "accuracy")
+  select_best(metric = "accuracy")  # Select the model with the best accuracy
+
+# Show the best model parameters based on the tuning results
 rf_model_final
 
+# Finalize the workflow with the best model (chosen based on accuracy)
 rf_workflow <- rf_workflow %>%
-  finalize_workflow(rf_model_final)
+  finalize_workflow(rf_model_final)  # Apply the best model to the workflow
 
+# Fit the finalized workflow on the entire training data
 rf_fit <- rf_workflow %>%
-  fit(data = stroke_training)
+  fit(data = stroke_training)  # Fit the model to the full training data
 
-rf_fit <- rf_workflow %>%
- fit(data = stroke_training)
-
-rf_fit
-
+# Predict the outcomes on the training data
 rf_training_results <- rf_fit %>%
   predict(new_data = stroke_training) %>%
-  mutate(truth = stroke_training$stroke_yn)
+  mutate(truth = stroke_training$stroke_yn)  # Add true outcome values (truth) to the predictions
 
+# View the first few rows of the training results
 head(rf_training_results)
 
-rf_training_results <- rf_fit %>%
-  predict(new_data = stroke_training) %>%
-  mutate(truth = stroke_training$stroke_yn)
-
-head(rf_training_results)
-
-# evaluate the model
-
+# Evaluate the model using R-squared (for classification, it is a pseudo R-squared)
 rsq_rf <- rf_training_results %>%
   mutate(truth = as.numeric(truth), .pred_class = as.numeric(.pred_class)) %>%
-  rsq(
-    truth = truth,
-    estimate = .pred_class
+  rsq(  # Compute R-squared (pseudo R-squared)
+    truth = truth,  # Actual outcomes
+    estimate = .pred_class  # Predicted class outcomes
   )
 
+# Calculate RMSE (Root Mean Squared Error) on predictions
 rmse_rf <- rf_training_results %>%
   mutate(truth = as.numeric(truth), .pred_class = as.numeric(.pred_class)) %>%
-  yardstick::rmse(
-    truth = truth,
-    estimate = .pred_class
+  yardstick::rmse(  # Compute RMSE
+    truth = truth,  # Actual outcomes
+    estimate = .pred_class  # Predicted class outcomes
   )
+
+# Output R-squared and RMSE results
 rsq_rf
 rmse_rf
 
-# Accuracy results
-rf_training_results %>% count(.pred_class, truth)
+# Count how many predictions fall into each category (True Positives, False Positives, etc.)
+rf_training_results %>% count(.pred_class, truth)  # Confusion matrix: compare predicted vs. actual
+
 ```
 
 ```{r}
@@ -1714,6 +1718,34 @@ forest_importances$Std <- std
 head(forest_importances)
 ```
 
+### Naive Bayes Classification
+
+
+```{r}
+
+nb_model <- naive_bayes(stroke_yn ~ ., data = stroke_training, usekernel = T)
+plot(nb_model)
+
+```
+
+```{r}
+# fit the model on training data
+nb_training_result <- predict(nb_model, stroke_training, type = "prob")
+```
+```{r}
+head(cbind(nb_training_result , stroke_training$stroke_yn))
+```
+```{r}
+p1 <- predict(nb_model, stroke_training)
+```
+
+```{r}
+(tab1 <- table(p1, stroke_training$stroke_yn))
+```
+
+```{r}
+1 - sum(diag(tab1)) / sum(tab1)
+```
 
 
 ```{r ci plot for all strokes}
