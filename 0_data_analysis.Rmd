@@ -1092,7 +1092,6 @@ ggplot(work_counts, aes(x = work_type, y = patient_count)) +
 
 ```
 
-
 ### Chi-squared & Fisher's Exact Tests
 
 ```{r doing ff labels for different variables, echo = FALSE}
@@ -1118,7 +1117,6 @@ stroke_data$work_type <- stroke_data$work_type %>%
   ff_label("Work Type")
 ```
 
-
 ```{r removing underweight bmi category}
 # Recode 'Unknown' to NA in all relevant columns
 stroke_data$bmi_category <- factor(stroke_data$bmi_category) # Ensure smoking_status is a factor
@@ -1127,9 +1125,6 @@ stroke_data$bmi_category[stroke_data$bmi_category  == "Underweight"] <- NA
 # Optionally drop the 'Unknown' level from the factor levels
 stroke_data$bmi_category <- droplevels(stroke_data$bmi_category)
 ```
-
-
-
 
 #### Chi-squared tests
 
@@ -1153,7 +1148,6 @@ stroke_data$bmi_category <- droplevels(stroke_data$bmi_category)
 
 #### Fisher's exact tests
 
-
 ```{r fishers test for explanatory variables and stroke}
  stroke_data %>% 
   summary_factorlist(dependent = "stroke_yn", 
@@ -1173,8 +1167,7 @@ stroke_data$bmi_category <- droplevels(stroke_data$bmi_category)
 
 ```
 
-
-### Facetted Visualisations 
+### Facetted Visualisations
 
 ```{r stroke outcomes and hypertension statuses facetted by age and gender}
 p1 <- stroke_data %>% 
@@ -1191,7 +1184,6 @@ p2 <- stroke_data %>%
 
 p1 / p2
 ```
-
 
 ```{r hypertension statuses facetted by stroke}
 p1 <- stroke_data %>% 
@@ -1228,7 +1220,6 @@ stroke_data$follow_up_time_days <- round(stroke_data$follow_up_time_days, 0)
 
 stroke_data$follow_up_years <- round(stroke_data$follow_up_years, 2)
 ```
-
 
 ```{r creating a survival curve using the KM method, echo=FALSE}
 
@@ -1406,16 +1397,14 @@ ggsurvplot(
 )
 ```
 
-
 ```{r calculating the HR of age categories}
 coxph(Surv(follow_up_years, status) ~ age_category, data = stroke_data) %>% 
   tbl_regression(exp = TRUE) 
 ```
 
-
-
 ### Cox Regression {.tabset .tabset-fade .tabset-pills}
 
+#### Model 1 - All explanatory variables
 
 ```{r Model 1 with all relevant explanatory variables}
 dependent = "Surv(follow_up_years, stroke)"
@@ -1450,8 +1439,6 @@ mykable = function(x){
    mykable()
 ```
 
-
-
 ```{r model 1 HR plot, warning=FALSE, message=FALSE, include = TRUE, echo = FALSE,fig.width=10,fig.height=5,fig.align = 'center'}
 
 stroke_data %>% 
@@ -1468,7 +1455,26 @@ tab[[2]] %>% knitr::kable()
 
 ```
 
+Key takeaways from Model 1:
 
+*   A good concordance/C-statistic. This indicates how well the model predicts the order of events. A value of 0.747 means that in 74.7% of the cases, the model correctly predicts that a patient who had a stroke earlier was at higher risk than a patient who did not or had the event later. Values range from 0.5 (no better than random guessing) to 1.0 (perfect prediction). The model's concordance is reasonably good.
+
+*  R-squared measures how much of the variability in (stroke occurrence) is 
+explained by the model. Here, your model explains 4.8% of the variability in stroke risk.
+The max possible R-squared of 0.576 represents the theoretical upper bound if 
+the model perfectly explained the outcome variance. This low R-squared is likely
+attributable to the random generation of follow-up times - not real data! 
+
+* The likelihood ratio test compares the model to a null model (with no predictors).
+A high test statistic with a very low p-value (p = 0.000) indicates that the 
+model significantly improves the fit compared to the null model.
+This confirms that the predictors collectively contribute to explaining stroke risk.
+
+* With 247 events out of 4253 individuals, the model has a moderate number of 
+events to estimate the relationships. The concordance SE of 0.018 shows a 
+relatively tight estimate of the concordance, suggesting reliable ranking performance.
+
+#### Model 2 - BMI and 'Work Type' excluded
 
 ```{r model 2 wo bmi or work type}
 dependent = "Surv(follow_up_years, stroke)"
@@ -1502,7 +1508,6 @@ mykable = function(x){
    mykable()
 ```
 
-
 ```{r model 2 HR plot, warning=FALSE, message=FALSE, include = TRUE, echo = FALSE,fig.width=10,fig.height=5,fig.align = 'center'}
 
 stroke_data %>% 
@@ -1519,6 +1524,8 @@ tab[[2]] %>% knitr::kable()
 
 ```
 
+
+#### Model 3 - Only Statistically Significant Variables
 
 
 ```{r model 3 with only statistically significant variables}
@@ -1553,7 +1560,6 @@ mykable = function(x){
    mykable()
 ```
 
-
 ```{r model 3 HR plot, warning=FALSE, message=FALSE, include = TRUE, echo = FALSE,fig.width=10,fig.height=5,fig.align = 'center'}
 
 stroke_data %>% 
@@ -1569,6 +1575,9 @@ tab[[2]] %>% knitr::kable()
 
 
 ```
+
+
+## Prediction Modelling {.tabset .tabset-fade .tabset-pills}
 
 ```{r ci plot for all strokes}
 # ci_fit <- cuminc(stroke_data$follow_up_years , stroke_data$status)
