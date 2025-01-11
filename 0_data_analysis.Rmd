@@ -19,7 +19,8 @@ pacman::p_load(tidyverse,icd,knitr,kableExtra,finalfit,lubridate,data.table,
                janitor,flextable,survival,survminer,rmdHelpers, ggrepel,
                scales,RColorBrewer,GGally,randomForest, caret,DT, gtsummary,cardx,
                ggsurvfit,mice,patchwork,rsample, parsnip,recipes, workflows,tune,
-               ranger,yardstick,vip,tidymodels,naivebayes,class, Metrics)
+               ranger,yardstick,vip,tidymodels,naivebayes,class, Metrics,shiny,
+               shinythemes)
 
 ```
 
@@ -1717,12 +1718,12 @@ stroke_testing <- testing(stroke_split)
 stroke_training <- stroke_training %>% select(-id, -hypertension_yn, -heart_disease_yn,
                                               -age_category, -bmi_category,-stroke,
                                               -follow_up_time_days,-follow_up_years,
-                                              -status)
+                                              -status,-gender,-bmi, -residence_type)
 
 stroke_testing <- stroke_testing %>% select(-id, -hypertension_yn, -heart_disease_yn,
                                               -age_category, -bmi_category,-stroke,
                                             -follow_up_time_days,-follow_up_years,
-                                              -status)
+                                              -status,-gender, -bmi,-residence_type)
 ```
 
 
@@ -1989,10 +1990,10 @@ ff_glimpse(stroke_testing)
 stroke_training_numeric <- stroke_training %>%
   # Convert categorical variables into numeric format (1-hot encoding)
   mutate(
-    gender = as.numeric(factor(gender)),
+    #gender = as.numeric(factor(gender)),
     ever_married = as.numeric(factor(ever_married)),
     work_type = as.numeric(factor(work_type)),
-    residence_type = as.numeric(factor(residence_type)),
+    #residence_type = as.numeric(factor(residence_type)),
     smoking_status = as.numeric(factor(smoking_status)),
     # Convert stroke_yn to 1 for "Yes" and 0 for "No"
     stroke_yn = ifelse(stroke_yn == "Yes", 1, 0)
@@ -2005,10 +2006,10 @@ head(stroke_training_numeric)
 stroke_testing_numeric <- stroke_testing %>%
   # Convert categorical variables into numeric format (1-hot encoding)
   mutate(
-    gender = as.numeric(factor(gender)),
+    #gender = as.numeric(factor(gender)),
     ever_married = as.numeric(factor(ever_married)),
     work_type = as.numeric(factor(work_type)),
-    residence_type = as.numeric(factor(residence_type)),
+    #residence_type = as.numeric(factor(residence_type)),
     smoking_status = as.numeric(factor(smoking_status)),
     # Convert stroke_yn to 1 for "Yes" and 0 for "No"
     stroke_yn = ifelse(stroke_yn == "Yes", 1, 0)
@@ -2087,7 +2088,7 @@ knn_model <- knn(
   train = stroke_training_numeric,
   test = stroke_testing_numeric,
   cl = stroke_training_numeric$stroke_yn,
-  k = 499,
+  k = 19,
   prob = TRUE
 )
 head(knn_model)
@@ -2134,8 +2135,14 @@ cat("AUC:", auc_value, "\n")
 
 
 
+```{r}
+saveRDS(knn_model, "knn_model.rds")
+```
 
 
+```{r}
+
+```
 
 ### Evaluating and Selecting Models
 
@@ -2220,6 +2227,50 @@ Metrics::auc(knn_model, stroke_testing_numeric$stroke_yn)
 # to calculate rmse
 Metrics::rmse(knn_model, stroke_testing_numeric$stroke_yn)
 ```
+
+## Building a Shiny App
+
+```{r}
+# Create a RShiny UI
+shinyUI(
+  fluidPage(theme = shinytheme("superhero"), padding=5,
+  titlePanel("Stroke Prediction Application"), 
+  # Create a side-bar layout
+  sidebarLayout(
+    # Create a side bar to for user input
+   
+    sidebarPanel(
+      h4("Fill in Your details and click on Submit for a Prediction"),
+      actionButton("predictButton", "Submit for a Prediction"),
+      selectInput(inputId="gender", "Select Gender", choices = c("Female", "Male"), selected = "Male"),
+      sliderInput("age", "Select Your Age:",
+                  min = 18, max = 82,
+                  value = 40),
+      selectInput(inputId="hypertension_yn", "Do you have hypertension?", choices = c("No", "Yes"), selected = "No"),
+      selectInput(inputId="heart_disease_yn", "Do you have heart disease?", choices = c("No", "Yes"), selected = "No"),
+      selectInput(inputId="ever_married", "Are You Married?", choices = c("No","Yes"), selected = "No"),
+      selectInput(inputId="work_type", "What is your job status", choices = c("Private", "Self.employed", "Govt_job", "children", "Never_worked"), selected = "Private"),
+      selectInput(inputId="Residence_type", "Where do you live", choices = c("Urban", "Rural"), selected = "Urban"),
+      sliderInput("bmi", "Your BMI:",
+                  min = 10, max = 98,
+                  value = 30),
+      selectInput(inputId="smoking_status", "What is your current Smoking Status?", choices = c("formerly.smoked", "never.smoked", "smokes", "Unknown"), selected = "never.smoked"
+                  )),
+    mainPanel(
+      h3("Stroke prediction result, 1 for stroke and 0 for no stroke"),
+      textOutput("predictionText"),
+      plotOutput("Age_dis")
+    )
+
+    )
+))
+```
+
+```{r}
+
+```
+
+
 
 ```{r ci plot for all strokes}
 # ci_fit <- cuminc(stroke_data$follow_up_years , stroke_data$status)
