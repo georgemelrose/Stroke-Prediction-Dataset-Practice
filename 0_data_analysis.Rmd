@@ -155,8 +155,10 @@ explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever
                  "work_type","residence_type","smoking_status")
 dependent <- "stroke_yn"
 
-stroke_data %>% 
+ stroke_data %>% 
   missing_plot(dependent, explanatory)
+
+ 
 ```
 
 There are different types of missingness:
@@ -229,7 +231,7 @@ explanatory <- c("bmi","heart_disease_yn","hypertension_yn","age")
 dependent <- "stroke_yn"
 
 stroke_data %>% 
-  missing_pairs(dependent, explanatory, position = "fill")
+  missing_pairs(dependent, explanatory, position = "fill", title = "Missing Data Matrix - BMI")
 
 ```
 
@@ -269,7 +271,8 @@ explanatory <- c("smoking_status","hypertension_yn","work_type")
 dependent <- "stroke_yn"
 
 stroke_data %>% 
-  missing_pairs(dependent, explanatory, position = "fill")
+  missing_pairs(dependent, explanatory, position = "fill",title = "Missing Data Matrix - smoking_status")
+
 
 ```
 
@@ -486,12 +489,34 @@ completedData <- complete(fits, action = 1)
 #scatter plot of original and imputed data with the magenta points being the imputed data points and the blue points being the observed values#
 
 xyplot(fits,bmi ~ age,pch=18,cex=1)
+
+densityplot(fits, 
+            ~ smoking_status,                     # Replace 'hyp' with your factor variable
+            main = "Density of Observed and Imputed Values for Hyp")
+
 ```
+
+```{r}
+# Convert your factor variable to a factor with appropriate levels
+fits$data$smoking_status <- factor(fits$data$smoking_status)
+
+# Now, create the density plot again with factor levels on the x-axis
+densityplot(fits, 
+            ~ smoking_status,                     # Factor variable with levels
+            main = "Density of Observed and Imputed Values for Smoking Status",
+            xlab = "Smoking Status",               # Custom x-axis label
+            scales = list(x = list(at = 1:length(levels(fits$data$smoking_status)), 
+                                   labels = levels(fits$data$smoking_status))))
+```
+
 
 The above is a scatter plot of original and imputed data with the magenta points being the imputed data points and the blue points being the observed values. The matching shape is a good verification of the imputed values indeed being plausible.
 
 ```{r density plot of observed and imputed values }
-densityplot(fits)
+densityplot(fits, 
+            ~ bmi,                     # Factor variable with levels
+            main = "Density of Observed and Imputed Values for BMI",
+            xlab = "BMI")
 ```
 
 The density of the imputed data for each imputed dataset is magenta and the density of the observed data is blue. Again, we expect the distributions to be similar.
