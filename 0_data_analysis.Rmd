@@ -1165,7 +1165,7 @@ stroke_data$bmi_category <- droplevels(stroke_data$bmi_category)
      kable("html") %>%
   kable_styling(
     bootstrap_options = c("striped", "hover", "condensed"),
-    full_width = TRUE,
+    full_width = FALSE,
     position = "center"
   )
 
@@ -1214,13 +1214,36 @@ p1 / p2
 ```{r hypertension statuses facetted by stroke}
 p1 <- stroke_data %>% 
   ggplot(aes(x = hypertension_yn, fill = stroke_yn)) + 
-  geom_bar(position = position_stack(reverse = TRUE)) + 
-  theme(legend.position = "none")
+  geom_bar(position = position_stack(reverse = TRUE)) +
+  labs(
+    x = "Hypertension Status",
+    y = "Number of Patients",
+    fill = "Stroke Status"
+  ) +
+  theme_minimal() +
+  theme(
+    text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 10),
+    legend.position = "none"
+  )
 
 p2 <- stroke_data %>% 
   ggplot(aes(x = hypertension_yn, fill = stroke_yn)) + 
   geom_bar(position = position_fill(reverse = TRUE)) + 
-  ylab("proportion")
+  scale_y_continuous(labels = percent) + # Convert y-axis to percentage
+  labs(
+    x = "Hypertension Status",
+    y = "Proportion (%)",
+    fill = "Stroke Status"
+  ) +
+  theme_minimal() +
+  theme(
+    text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 10),
+    legend.position = "right"
+  )
 
 p1 + p2
 ```
@@ -1228,13 +1251,36 @@ p1 + p2
 ```{r ages facetted by stroke}
 p1 <- stroke_data %>% 
   ggplot(aes(x = age_category, fill = stroke_yn)) + 
-  geom_bar(position = position_stack(reverse = TRUE)) + 
-  theme(legend.position = "none")
+  geom_bar(position = position_stack(reverse = TRUE)) +
+  labs(
+    x = "Age Category",
+    y = "Number of Patients",
+    fill = "Stroke Status"
+  ) +
+  theme_minimal() +
+  theme(
+    text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 10),
+    legend.position = "none"
+  )
 
 p2 <- stroke_data %>% 
   ggplot(aes(x = age_category, fill = stroke_yn)) + 
   geom_bar(position = position_fill(reverse = TRUE)) + 
-  ylab("proportion")
+  scale_y_continuous(labels = percent) + # Convert y-axis to percentage
+  labs(
+    x = "Age Category",
+    y = "Proportion (%)",
+    fill = "Stroke Status"
+  ) +
+  theme_minimal() +
+  theme(
+    text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 10),
+    legend.position = "right"
+  )
 
 p1 + p2
 ```
@@ -1299,7 +1345,7 @@ ggsurvplot(
 
 ```{r estimating 3 year survival}
 
-summary(survfit(Surv(follow_up_years, status) ~ 1, data = stroke_data), times = 3)
+summary(survfit(Surv(follow_up_years, status) ~ 1, data = stroke_data), times = 5)
 
 ```
 
@@ -1307,7 +1353,7 @@ summary(survfit(Surv(follow_up_years, status) ~ 1, data = stroke_data), times = 
 survfit(Surv(follow_up_years, status) ~ 1, data = stroke_data) %>% 
   tbl_survfit(
     times = 3,
-    label_header = "**3-year survival (95% CI)**"
+    label_header = "**5-year survival (95% CI)**"
   )
 
 
@@ -1360,8 +1406,8 @@ ggsurvplot(
            risk.table.y.text = FALSE,
            conf.int = TRUE, cumcensor = FALSE, conf.int.style = "step",pval.coord = c(0, 0.76), pval.method = TRUE, pval.method.coord = c(0, 0.72),
            legend.labs = legend_labels,
-           legend.title = "Smoking Status",pval.size = 5, pval.method.size = 5, # Set legend title
-             font.x = c(0, "plain", "white") # Removes x-axis text from KM plot
+           legend.title = "Smoking Status",pval.size = 5, pval.method.size = 5 # Set legend title
+             #font.x = c(0, "plain", "white") # Removes x-axis text from KM plot
 
 )
 ```
@@ -1426,6 +1472,54 @@ ggsurvplot(
 ```{r calculating the HR of age categories}
 coxph(Surv(follow_up_years, status) ~ age_category, data = stroke_data) %>% 
   tbl_regression(exp = TRUE) 
+```
+
+
+### Gender
+
+```{r comparing survival time for smoking status, echo=FALSE}
+
+survfit(Surv(follow_up_years, status) ~ gender, data = stroke_data)
+
+fit_gender <- survfit(Surv(follow_up_years, status) ~ gender, data = stroke_data)
+```
+
+
+
+```{r survival curve for age categories,fig.width=11.5,fig.height=5.3,fig.align = 'center'}
+legend_labels <- c("Female", "Male")
+
+ggsurvplot(
+  fit_gender,
+  xlim = c(0, 5),
+  ylim = c(0.7, 1),
+  break.time.by = 1,
+  xlab = "Years since Study Start",
+  ylab = "Survival Probability",
+  pval = TRUE,
+  ggtheme = theme_minimal() + theme(
+                  panel.grid.major = element_blank(), # Remove major grid lines
+                  panel.grid.minor = element_blank(), # Remove minor grid lines
+                  panel.background = element_blank(), # Remove panel background
+                  plot.background = element_blank(),  # Remove plot background
+                  axis.line = element_line(color = "black"), # Keep axis lines if desired
+                  axis.title = element_text(size = 13), # Increase axis title size
+                  axis.text = element_text(size = 11),  # Increase axis text size
+                  legend.text = element_text(size = 13), # Increase legend text size
+                  legend.title = element_text(size = 16), # Increase legend title size
+                  plot.title = element_text(size = 14), # Increase plot title size
+                  plot.subtitle = element_text(size = 13), # Increase plot subtitle size
+                  legend.key.size = unit(1.5, "lines") # Increase legend key size
+                ),
+           risk.table = TRUE,
+           risk.table.y.text.col = TRUE,
+           risk.table.height = 0.35,
+           risk.table.y.text = FALSE,
+           conf.int = TRUE, cumcensor = FALSE, conf.int.style = "step",pval.coord = c(0, 0.76), pval.method = TRUE, pval.method.coord = c(0, 0.72),
+           legend.labs = legend_labels,
+           legend.title = "Gender",pval.size = 5, pval.method.size = 5 # Set legend title
+
+)
 ```
 
 ### Cox Regression {.tabset .tabset-fade .tabset-pills}
@@ -1634,7 +1728,7 @@ stroke_testing <- stroke_testing %>% select(-id, -hypertension_yn, -heart_diseas
 
 ### Random Forest
 
-```{r}
+```{r Generating and training and RF model on training data}
 # Setting a seed to ensure reproducibility of results
 set.seed(123)
 
@@ -1722,7 +1816,7 @@ rf_training_results %>% count(.pred_class, truth)  # Confusion matrix: compare p
 
 ```
 
-```{r}
+```{r Random Forest feature importance}
 # Extract feature importance from the fitted random forest model
 importances <- rf_fit %>%
   extract_fit_parsnip() %>%
@@ -1744,7 +1838,7 @@ head(forest_importances)
 ```
 
 
-```{r}
+```{r testing RF model on testing dataset}
 
 # Predict on the testing dataset
 rf_testing_results <- rf_fit %>%
@@ -1809,36 +1903,36 @@ roc_auc
 ### Naive Bayes Classification
 
 
-```{r}
+```{r making an nb model}
 
 nb_model <- naive_bayes(stroke_yn ~ ., data = stroke_training, usekernel = T)
 plot(nb_model)
 
 ```
 
-```{r}
+```{r fitting nb model on training data}
 # fit the model on training data
 nb_training_result <- predict(nb_model, stroke_training, type = "prob")
 ```
 
-```{r}
+```{r comparing nb training results}
 head(cbind(nb_training_result , stroke_training$stroke_yn))
 ```
-```{r}
+```{r making an object of the nb model on training data}
 p1 <- predict(nb_model, stroke_training)
 ```
 
-```{r}
+```{r confusion matrix for nb model on training data}
 (tab1 <- table(p1, stroke_training$stroke_yn))
 ```
 
-```{r}
+```{r accuracy of nb model}
 1 - sum(diag(tab1)) / sum(tab1)
 ```
 Naives Bayes has an accuracy of 99.9% on the training data.
 
 
-```{r}
+```{r testing nb on testing data}
 # --- Extension to Testing Data ---
 
 # Predict probabilities on the testing data
@@ -1926,19 +2020,18 @@ head(stroke_testing_numeric)
 ```
 
 
-```{r}
-# Fitting KNN Model to training dataset
+```{r Fitting KNN Model to training dataset}
 knn_model <- knn(
   train = stroke_training_numeric,
   test = stroke_testing_numeric,
   cl = stroke_training_numeric$stroke_yn,
-  k = 1,
+  k = 19,
   prob = TRUE
 )
 head(knn_model)
 ```
 
-```{r}
+```{r cm for testing data}
 # Confusion Matrix
 cm <- table(stroke_testing_numeric$stroke_yn, knn_model)
 cm
