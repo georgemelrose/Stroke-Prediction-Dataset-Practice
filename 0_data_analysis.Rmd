@@ -20,7 +20,7 @@ pacman::p_load(tidyverse,icd,knitr,kableExtra,finalfit,lubridate,data.table,
                scales,RColorBrewer,GGally,randomForest, caret,DT, gtsummary,cardx,
                ggsurvfit,mice,patchwork,rsample, parsnip,recipes, workflows,tune,
                ranger,yardstick,vip,tidymodels,naivebayes,class, Metrics,shiny,
-               shinythemes)
+               shinythemes,pROC)
 
 ```
 
@@ -1718,12 +1718,12 @@ stroke_testing <- testing(stroke_split)
 stroke_training <- stroke_training %>% select(-id, -hypertension_yn, -heart_disease_yn,
                                               -age_category, -bmi_category,-stroke,
                                               -follow_up_time_days,-follow_up_years,
-                                              -status,-gender,-bmi, -residence_type)
+                                              -status,-gender,-residence_type)
 
 stroke_testing <- stroke_testing %>% select(-id, -hypertension_yn, -heart_disease_yn,
                                               -age_category, -bmi_category,-stroke,
                                             -follow_up_time_days,-follow_up_years,
-                                              -status,-gender, -bmi,-residence_type)
+                                              -status,-gender,-residence_type)
 ```
 
 
@@ -1755,7 +1755,7 @@ rf_workflow <- workflow() %>%
   add_model(rf_model)  # Add the random forest model
 
 # Create a grid for hyperparameter tuning: mtry and trees values to explore
-rf_grid <- expand.grid(mtry = c(3, 4, 5), trees = c(100, 500))
+rf_grid <- expand.grid(mtry = c(3, 4, 5), trees = c(500, 1000))
 
 # Set the seed again for reproducibility and perform hyperparameter tuning
 set.seed(125)
@@ -1912,13 +1912,37 @@ plot(nb_model)
 ```
 
 ```{r fitting nb model on training data}
-# fit the model on training data
-nb_training_result <- predict(nb_model, stroke_training, type = "prob")
+# Predict probabilities on the training data
+nb_training_probs <- predict(nb_model, stroke_training, type = "prob")
+
+# Predict classes on the training data
+nb_training_preds <- predict(nb_model, stroke_training)
+
+# Confusion matrix for training data
+(tab2 <- table(Predicted = nb_training_preds, Actual = stroke_training$stroke_yn))
+
+# Calculate training error rate
+training_error_rate <- 1 - sum(diag(tab2)) / sum(tab2)
+training_error_rate
+
+# Evaluate ROC AUC on the training data
+
+
+# Convert training data predictions into a dataframe with actual values and predicted probabilities
+nb_training_results <- cbind(stroke_training, nb_training_probs)
+
+# Ensure stroke_yn is a factor
+nb_training_results <- nb_training_results %>%
+  mutate(stroke_yn = as.factor(stroke_yn))
+
+# Compute ROC AUC
+roc_auc <- nb_training_results %>%
+  roc_auc(truth = stroke_yn,Yes)  # Assuming "Yes" is the positive class
+
+# Display ROC AUC
+roc_auc
 ```
 
-```{r comparing nb training results}
-head(cbind(nb_training_result , stroke_training$stroke_yn))
-```
 ```{r making an object of the nb model on training data}
 p1 <- predict(nb_model, stroke_training)
 ```
@@ -2032,6 +2056,14 @@ knn_model <- knn(
 head(knn_model)
 ```
 
+
+```{r cm for training data}
+# Confusion Matrix
+cm <- table(stroke_training_numeric$stroke_yn, knn_model)
+cm
+```
+
+
 ```{r cm for testing data}
 # Confusion Matrix
 cm <- table(stroke_testing_numeric$stroke_yn, knn_model)
@@ -2070,6 +2102,24 @@ cat("Recall (No, 0):", recall_no, "\n")
 f1_no <- 2 * (precision_no * recall_no) / (precision_no + recall_no)
 cat("F1 Score (No, 0):", f1_no, "\n")
 ```
+```{r}
+roc(stroke_training$stroke_yn, attributes(knn_model)$prob)
+
+plot(roc(stroke_training$stroke_yn, attributes(knn_model)$prob),
+     print.thres = T,
+     print.auc=T)
+```
+
+```{r}
+attributes(knn_model)$prob
+
+roc(stroke_testing$stroke_yn, attributes(knn_model)$prob)
+
+plot(roc(stroke_testing$stroke_yn, attributes(knn_model)$prob),
+     print.thres = T,
+     print.auc=T)
+```
+
 
 ```{r}
 attributes(knn_model)$prob
