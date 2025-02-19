@@ -108,9 +108,11 @@ stroke_data <- stroke_data %>% mutate(
   # Only 2 categories created as 18-35 year olds have only 1 stroke so meaningless
   # to include them separately
   age_category = case_when(
-   age <= 60 ~ "≤60",
-   age > 60 ~ ">60"
-  ) %>% factor(levels = c("≤60", ">60")),
+   age < 60 ~ "<60",
+   age >= 60 & age < 70 ~ "60-69",
+   age >= 70 & age < 80 ~ "70-79",
+   age >= 80 ~ ">80"
+  ) %>% factor(levels = c("<60","60-69","70-79",">80")),
   
   # Create BMI categories
   bmi_category = case_when(
@@ -153,7 +155,7 @@ There are 181 NAs in the original 'bmi' variable. These didn't show up in the fi
 
 ```{r missing values plot}
 explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
-                 "work_type","residence_type","smoking_status")
+                 "work_type","residence_type","smoking_status","age_category")
 dependent <- "stroke_yn"
 
  stroke_data %>% 
@@ -486,18 +488,14 @@ mice(m = 10, predictorMatrix = predM)
 completedData <- complete(fits, action = 1)
 ```
 
-```{r scatterplot of original and imputed data}
+```{r scatterplot of original and imputed data bmi vs age}
 #scatter plot of original and imputed data with the magenta points being the imputed data points and the blue points being the observed values#
 
 xyplot(fits,bmi ~ age,pch=18,cex=1)
 
-densityplot(fits, 
-            ~ smoking_status,                     # Replace 'hyp' with your factor variable
-            main = "Density of Observed and Imputed Values for Hyp")
-
 ```
 
-```{r}
+```{r density plot of observed and imputed values for smoking status}
 # Convert your factor variable to a factor with appropriate levels
 fits$data$smoking_status <- factor(fits$data$smoking_status)
 
@@ -513,7 +511,7 @@ densityplot(fits,
 
 The above is a scatter plot of original and imputed data with the magenta points being the imputed data points and the blue points being the observed values. The matching shape is a good verification of the imputed values indeed being plausible.
 
-```{r density plot of observed and imputed values }
+```{r density plot of observed and imputed values for bmi}
 densityplot(fits, 
             ~ bmi,                     # Factor variable with levels
             main = "Density of Observed and Imputed Values for BMI",
@@ -1435,7 +1433,7 @@ fit_age <- survfit(Surv(follow_up_years, status) ~ age_category, data = stroke_d
 ```
 
 ```{r survival curve for age categories,fig.width=11.5,fig.height=5.3,fig.align = 'center'}
-legend_labels <- c("≤60", ">60")
+legend_labels <- c("<60","60-69","70-79",">80")
 
 ggsurvplot(
   fit_age,
@@ -1544,7 +1542,7 @@ mykable = function(x){
     knitr::kable(x, row.names = FALSE, align = c("l", "l", "r", "r", "r", "r", "r", "r", "r"))
 }
 
-# Your data manipulation and kable code
+# data manipulation and kable code
  result <- tab[[1]] %>%
   rename(!!{{ dependent_label }} := label) %>%
   rename(" " = levels) %>%
@@ -2057,12 +2055,6 @@ head(knn_model)
 ```
 
 
-```{r cm for training data}
-# Confusion Matrix
-cm <- table(stroke_training_numeric$stroke_yn, knn_model)
-cm
-```
-
 
 ```{r cm for testing data}
 # Confusion Matrix
@@ -2102,13 +2094,7 @@ cat("Recall (No, 0):", recall_no, "\n")
 f1_no <- 2 * (precision_no * recall_no) / (precision_no + recall_no)
 cat("F1 Score (No, 0):", f1_no, "\n")
 ```
-```{r}
-roc(stroke_training$stroke_yn, attributes(knn_model)$prob)
 
-plot(roc(stroke_training$stroke_yn, attributes(knn_model)$prob),
-     print.thres = T,
-     print.auc=T)
-```
 
 ```{r}
 attributes(knn_model)$prob
@@ -2149,50 +2135,17 @@ plot(roc(stroke_testing$stroke_yn, attributes(knn_model)$prob),
      print.thres = T,
      print.auc=T)
 ```
+
 ```{r}
 roc(stroke_testing$stroke_yn, attributes(knn_model)$prob)
 
 ```
-
-```{r}
-# Compute ROC and AUC (you need probability estimates for AUC)
-# To compute AUC, you first need predicted probabilities, not just class predictions
-# If your KNN model supports probability output (like with kNN from `class` package), 
-# you'd use the prob argument to get probabilities for each class.
-# For now, let's assume you're using the class predictions.
-# Install the pROC package if you haven't already:
-# install.packages("pROC")
-library(pROC)
-
-# Get predicted probabilities (assuming you're using knn from `class` package with probability = TRUE)
-knn_prob <- knn(
-  train = stroke_training_numeric,
-  test = stroke_testing_numeric,
-  cl = stroke_training_numeric$stroke_yn,
-  k = 5,
-  prob = TRUE
-)
-
-# Convert the probabilities into a data frame (for ROC calculation)
-knn_prob_df <- attr(knn_prob, "prob")  # Assuming this gives you probabilities for each class
-
-# For AUC, let's consider 'Yes' (1, stroke) class as the positive class
-roc_curve <- roc(stroke_testing_numeric$stroke_yn, knn_prob_df[, "1"])  # Assuming '1' is the positive class
-auc_value <- auc(roc_curve)
-cat("AUC:", auc_value, "\n")
-
-```
-
 
 
 ```{r}
 saveRDS(knn_model, "knn_model.rds")
 ```
 
-
-```{r}
-
-```
 
 ### Evaluating and Selecting Models
 
@@ -2248,6 +2201,9 @@ Metrics::auc(p1, stroke_training$stroke_yn)
 # to calculate rmse
 Metrics::rmse(p1, stroke_training$stroke_yn)
 ```
+
+
+
 ```{r}
 # K-Nearest Neighbor classification (test results)
 
@@ -2272,7 +2228,6 @@ Metrics::f1(knn_model, stroke_testing_numeric$stroke_yn)
 
 # to calculate auc
 Metrics::auc(knn_model, stroke_testing_numeric$stroke_yn)
-
 
 # to calculate rmse
 Metrics::rmse(knn_model, stroke_testing_numeric$stroke_yn)
