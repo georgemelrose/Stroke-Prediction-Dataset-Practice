@@ -2065,7 +2065,7 @@ cm
 1 - sum(diag(cm)) / sum(cm)
 ```
 
-```{r}
+```{r getting metrics for KNN model}
 # Confusion Matrix
 cm <- table(stroke_testing_numeric$stroke_yn, knn_model)
 print(cm)
@@ -2096,7 +2096,7 @@ cat("F1 Score (No, 0):", f1_no, "\n")
 ```
 
 
-```{r}
+```{r auroc curve for knn model}
 attributes(knn_model)$prob
 
 roc(stroke_testing$stroke_yn, attributes(knn_model)$prob)
@@ -2107,34 +2107,6 @@ plot(roc(stroke_testing$stroke_yn, attributes(knn_model)$prob),
 ```
 
 
-```{r}
-attributes(knn_model)$prob
-
-library(pROC)
-
-roc(stroke_testing$stroke_yn, attributes(knn_model)$prob)
-
-plot(roc(stroke_testing$stroke_yn, attributes(knn_model)$prob),
-     print.thres = T,
-     print.auc=T)
-```
-
-```{r}
-knn_model <- knn(
-  train = stroke_training_numeric,
-  test = stroke_testing_numeric,
-  cl = stroke_training_numeric$stroke_yn,
-  k = 19,
-  prob = TRUE
-)
-head(knn_model)
-
-roc(stroke_testing$stroke_yn, attributes(knn_model)$prob)
-
-plot(roc(stroke_testing$stroke_yn, attributes(knn_model)$prob),
-     print.thres = T,
-     print.auc=T)
-```
 
 ```{r}
 roc(stroke_testing$stroke_yn, attributes(knn_model)$prob)
@@ -2142,7 +2114,7 @@ roc(stroke_testing$stroke_yn, attributes(knn_model)$prob)
 ```
 
 
-```{r}
+```{r saving knn model to a .rds file}
 saveRDS(knn_model, "knn_model.rds")
 ```
 
