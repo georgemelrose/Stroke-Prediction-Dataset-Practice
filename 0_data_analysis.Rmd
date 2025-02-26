@@ -1476,7 +1476,7 @@ coxph(Surv(follow_up_years, status) ~ age_category, data = stroke_data) %>%
 
 ### Gender
 
-```{r comparing survival time for smoking status, echo=FALSE}
+```{r comparing survival time for gender, echo=FALSE}
 
 survfit(Surv(follow_up_years, status) ~ gender, data = stroke_data)
 
@@ -1485,7 +1485,7 @@ fit_gender <- survfit(Surv(follow_up_years, status) ~ gender, data = stroke_data
 
 
 
-```{r survival curve for age categories,fig.width=11.5,fig.height=5.3,fig.align = 'center'}
+```{r survival curve for gender categories,fig.width=11.5,fig.height=5.3,fig.align = 'center'}
 legend_labels <- c("Female", "Male")
 
 ggsurvplot(
@@ -1520,6 +1520,13 @@ ggsurvplot(
 
 )
 ```
+
+```{r calculating the HR of gender categories}
+coxph(Surv(follow_up_years, status) ~ gender, data = stroke_data) %>% 
+  tbl_regression(exp = TRUE) 
+```
+
+
 
 ### Cox Regression {.tabset .tabset-fade .tabset-pills}
 
@@ -1996,6 +2003,8 @@ ff_glimpse(stroke_training)
 
 ff_glimpse(stroke_testing)
 
+#removing the 3 NAs from the work type variable#
+
 stroke_training <- stroke_training %>% filter(!is.na(work_type)) 
 
 stroke_testing <- stroke_testing %>% filter(!is.na(work_type))
@@ -2008,6 +2017,7 @@ ff_glimpse(stroke_training)
 ff_glimpse(stroke_testing)
 ```
 ```{r making categorical variables numeric for knn}
+
 # Convert categorical variables into numeric format (one-hot encoding)
 stroke_training_numeric <- stroke_training %>%
   # Convert categorical variables into numeric format (1-hot encoding)
@@ -2061,9 +2071,6 @@ head(knn_model)
 cm <- table(stroke_testing_numeric$stroke_yn, knn_model)
 cm
 ```
-```{r}
-1 - sum(diag(cm)) / sum(cm)
-```
 
 ```{r getting metrics for KNN model}
 # Confusion Matrix
@@ -2107,13 +2114,6 @@ plot(roc(stroke_testing$stroke_yn, attributes(knn_model)$prob),
 ```
 
 
-
-```{r}
-roc(stroke_testing$stroke_yn, attributes(knn_model)$prob)
-
-```
-
-
 ```{r saving knn model to a .rds file}
 saveRDS(knn_model, "knn_model.rds")
 ```
@@ -2121,7 +2121,7 @@ saveRDS(knn_model, "knn_model.rds")
 
 ### Evaluating and Selecting Models
 
-```{r}
+```{r getting metrics for the RF model}
 # Random Forest Model
 
 rf_training_results <- rf_training_results %>%
@@ -2146,7 +2146,7 @@ Metrics::auc(rf_training_results$.pred_class, rf_training_results$truth)
 Metrics::rmse(rf_training_results$.pred_class, rf_training_results$truth)
 ```
 
-```{r}
+```{r getting metrics for the NB model}
 # Naive Bayes Classification
 
 stroke_training$stroke_yn <- as.numeric(stroke_training$stroke_yn)
@@ -2176,15 +2176,11 @@ Metrics::rmse(p1, stroke_training$stroke_yn)
 
 
 
-```{r}
-# K-Nearest Neighbor classification (test results)
+```{r getting metrics for the KNN model}
+# K-Nearest Neighbor (KNN) classification (test results)
+# KNN is a so called 'lazy learning' algorithm so doesn't compute the training
+# results separately 
 
-# stroke_testing$stroke_yn <- as.numeric(stroke_testing$stroke_yn)
-# stroke_testing$stroke_yn <- stroke_testing$stroke_yn - 1
-# 
-# knn_model <- as.numeric(knn_model)
-# 
-# knn_model <- knn_model- 1
 
 # to calculate accuracy
 Metrics::accuracy(knn_model, stroke_testing_numeric$stroke_yn)
@@ -2207,7 +2203,7 @@ Metrics::rmse(knn_model, stroke_testing_numeric$stroke_yn)
 
 ## Building a Shiny App
 
-```{r}
+```{r shiny code}
 # Create a RShiny UI
 shinyUI(
   fluidPage(theme = shinytheme("superhero"), padding=5,
@@ -2241,94 +2237,4 @@ shinyUI(
 
     )
 ))
-```
-
-```{r}
-
-```
-
-
-
-```{r ci plot for all strokes}
-# ci_fit <- cuminc(stroke_data$follow_up_years , stroke_data$status)
-# 
-# ciplot <- ci_fit %>% list_modify("Tests" = NULL) %>%
-#   map_df(`[`, c("time", "est", "var"), .id = "id") %>%
-#    mutate(Stroke = recode(
-#     id,
-#     "1 1" = "Stroke"))
-# 
-# 
-# ggplot(ciplot, aes(x = time, y = est, color = Stroke)) +
-#   geom_step(lwd = 1.2) +
-#   scale_y_continuous(limits = c(0, 0.4), labels = scales::percent_format(accuracy = 1)) +  # Format y-axis as percentages
-#   scale_x_continuous(breaks = seq(0, 5, 1), limits = c(0, 5)) +  # Setting limits here
-#   theme_minimal() +  # Use theme_minimal for a simple background
-#   theme(
-#     plot.title = element_text(size = 25), # Increase plot title size
-#     legend.title = element_blank(),
-#     legend.position = "bottom",
-#     axis.title = element_text(size = 20), # Increase axis title size
-#     axis.text = element_text(size = 17),  # Increase axis text size
-#     legend.text = element_text(size = 20), # Increase legend text size
-#     panel.grid.major = element_blank(),  # Remove major grid lines
-#     panel.grid.minor = element_blank(),  # Remove minor grid lines
-#     panel.background = element_rect(fill = "white", color = NA),  # Ensure background is white and remove panel border
-#     plot.background = element_rect(fill = "white", color = NA),  # Ensure plot area is white and remove plot border
-#     axis.line = element_line(color = "black"),  # Keep axis lines
-#     axis.line.y.right = element_blank(),  # Remove right side axis line
-#     axis.line.x.top = element_blank()  # Remove top side axis line
-#   ) +
-#   labs(
-#     x = "Days",
-#     y = "Cumulative Strokes",
-#     title = "All Patients"
-#   )
-```
-
-```{r ci plot stratified by smoking status}
-# ci_smoking <- cuminc(stroke_data$follow_up_years , stroke_data$status, group = stroke_data$smoking_status)
-# 
-# ciplot <- ci_smoking %>% list_modify("Tests" = NULL) %>%
-#   map_df(`[`, c("time", "est", "var"), .id = "id") %>%
-#    mutate(id = recode(
-#     id,
-#     "never smoked 1" = "Never Smoked Strokes",
-#     "formerly smoked 1" = "Formerly Smoked Strokes",
-#     "smokes 1" = "Smoked Strokes")) %>%
-#   separate(id, c("smoking_status","Event"),":")
-# 
-# 
-# ggplot(ciplot, aes(x = time, y = est, color = smoking_status)) +
-#   geom_step(lwd = 1.2) +
-#   scale_y_continuous(limits = c(0, 0.4), labels = scales::percent_format(accuracy = 1)) +  # Format y-axis as percentages
-#   scale_x_continuous(breaks = seq(0, 5, 1), limits = c(0, 5)) +  # Setting limits here
-#   theme_minimal() +  # Use theme_minimal for a simple background
-#   theme(
-#     plot.title = element_text(size = 20), # Increase plot title size
-#     legend.title = element_blank(),
-#     legend.position = "bottom",
-#     axis.title = element_text(size = 10), # Increase axis title size
-#     axis.text = element_text(size = 8),  # Increase axis text size
-#     legend.text = element_text(size = 10), # Increase legend text size
-#     panel.grid.major = element_blank(),  # Remove major grid lines
-#     panel.grid.minor = element_blank(),  # Remove minor grid lines
-#     panel.background = element_rect(fill = "white", color = NA),  # Ensure background is white and remove panel border
-#     plot.background = element_rect(fill = "white", color = NA),  # Ensure plot area is white and remove plot border
-#     axis.line = element_line(color = "black"),  # Keep axis lines
-#     axis.line.y.right = element_blank(),  # Remove right side axis line
-#     axis.line.x.top = element_blank()  # Remove top side axis line
-#   ) +
-#   labs(
-#     x = "Days",
-#     y = "Cumulative strokes",
-#     title = "Stratified by Smoking Status"
-#   ) +
-#   annotate("text", x = 0, y = 0.26, hjust = 0,
-#            label = paste0(
-#              "Log-rank p-value = ",
-#              ifelse(ci_smoking$Tests[1,2] < .001,
-#                     "<.001",
-#                     round(ci_smoking$Tests[1,2], 3))),
-#            size = 5)
 ```
