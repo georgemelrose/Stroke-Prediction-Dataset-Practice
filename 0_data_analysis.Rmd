@@ -15,12 +15,12 @@ rm(list = ls())
 
 knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
 
-pacman::p_load(tidyverse,icd,knitr,kableExtra,finalfit,lubridate,data.table,
+pacman::p_load(tidyverse,knitr,kableExtra,finalfit,lubridate,data.table,
                janitor,flextable,survival,survminer,rmdHelpers, ggrepel,
                scales,RColorBrewer,GGally,randomForest, caret,DT, gtsummary,cardx,
                ggsurvfit,mice,patchwork,rsample, parsnip,recipes, workflows,tune,
                ranger,yardstick,vip,tidymodels,naivebayes,class, Metrics,shiny,
-               shinythemes,pROC)
+               shinythemes,pROC,DMwR)
 
 ```
 
@@ -1703,7 +1703,7 @@ tab[[2]] %>% knitr::kable()
 ```
 
 
-## Prediction Modelling {.tabset .tabset-fade .tabset-pills}
+## Prediction Modelling Part 1 {.tabset .tabset-fade .tabset-pills}
 
 ### Preprocessing data
 
@@ -2199,6 +2199,39 @@ Metrics::auc(knn_model, stroke_testing_numeric$stroke_yn)
 
 # to calculate rmse
 Metrics::rmse(knn_model, stroke_testing_numeric$stroke_yn)
+```
+## Prediction Modelling Part 2 - SMOTE-Balanced Classes (8.5% Stroke) {.tabset .tabset-fade .tabset-pills}
+
+```{r adding back in underweight bmi category before SMOTE}
+
+# Recode NA values to 'Underweight' in bmi_category
+stroke_data$bmi_category <- factor(stroke_data$bmi_category)  # Ensure bmi_category is a factor
+
+# Re-add 'Underweight' as a factor level (if it was removed during any processing)
+stroke_data$bmi_category <- factor(stroke_data$bmi_category, levels = c(levels(stroke_data$bmi_category), "Underweight"))
+
+
+stroke_data$bmi_category[is.na(stroke_data$bmi_category)] <- "Underweight"
+
+```
+
+```{r}
+# Add 'Unknown' as a factor level tok work_type to make it suitable for SMOTE#
+
+stroke_data$work_type <- factor(stroke_data$work_type, levels = c(levels(stroke_data$work_type), "Unknown"))
+
+stroke_data$work_type[is.na(stroke_data$work_type)] <- "Unknown"
+```
+
+
+```{r SMOTE to get stroke yes rate to 8.5%}
+# Apply SMOTE
+stroke_data_balanced <- SMOTE(stroke_yn ~ ., data = stroke_data, 
+                              perc.over = 70,perc.under = 165)
+
+# Check new class distribution
+table(stroke_data_balanced$stroke_yn)
+prop.table(table(stroke_data_balanced$stroke_yn))  # Proportions
 ```
 
 ## Building a Shiny App
