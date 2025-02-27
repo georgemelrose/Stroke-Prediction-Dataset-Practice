@@ -2216,23 +2216,75 @@ stroke_data$bmi_category[is.na(stroke_data$bmi_category)] <- "Underweight"
 ```
 
 ```{r}
-# Add 'Unknown' as a factor level tok work_type to make it suitable for SMOTE#
+# Add 'Unknown' as a factor level to work_type to make it suitable for SMOTE#
 
 stroke_data$work_type <- factor(stroke_data$work_type, levels = c(levels(stroke_data$work_type), "Unknown"))
 
 stroke_data$work_type[is.na(stroke_data$work_type)] <- "Unknown"
 ```
 
+```{r}
+ff_glimpse(stroke_data)
+```
+
 
 ```{r SMOTE to get stroke yes rate to 8.5%}
 # Apply SMOTE
-stroke_data_balanced <- SMOTE(stroke_yn ~ ., data = stroke_data, 
-                              perc.over = 70,perc.under = 165)
+stroke_data_balanced <- SMOTE(stroke_yn ~ ., data = stroke_data)  
 
-# Check new class distribution
 table(stroke_data_balanced$stroke_yn)
-prop.table(table(stroke_data_balanced$stroke_yn))  # Proportions
+
 ```
+```{r}
+# Convert categorical columns to numeric (e.g., using one-hot encoding)
+# If you have factor columns, convert them into dummy variables using model.matrix
+X <- stroke_data[, !names(stroke_data) %in% "stroke_yn"]  # Exclude target variable
+
+# Convert factors into numeric columns (one-hot encoding)
+X <- data.frame(lapply(X, function(x) {
+  if (is.factor(x)) {
+    as.numeric(factor(x))  # Convert factors to numeric
+  } else {
+    x  # Keep numeric columns as they are
+  }
+}))
+
+# Now check if all columns are numeric
+str(X)
+
+# Prepare target variable
+target <- stroke_data$stroke_yn  # The target variable (should already be numeric or a factor)
+
+# Ensure target is a factor or numeric
+target <- as.factor(target)
+
+# Apply SMOTE to balance the data
+# K = 5 (default nearest neighbors), dup_size = 70% increase in stroke cases
+balanced_data <- SMOTE(X, target, K = 5, dup_size = 5)
+
+# Check the distribution of the balanced dataset
+table(balanced_data$target)
+
+# View the balanced dataset
+head(balanced_data$data)
+```
+
+```{r}
+# The balanced_data object contains both synthetic and original instances in 'data' 
+# Access the 'data' part of the SMOTE result
+balanced_data_df <- balanced_data$data
+
+# Check if it's now a dataframe
+str(balanced_data_df)
+
+# View the first few rows of the balanced data
+head(balanced_data_df)
+
+table(balanced_data_df$class)
+```
+
+
+
 
 ## Building a Shiny App
 
