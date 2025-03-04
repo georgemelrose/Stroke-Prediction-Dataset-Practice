@@ -2307,6 +2307,9 @@ stroke_yes <- stroke_data[stroke_data$stroke_yn == "Yes", ]
 
 original_stroke_ids <- stroke_yes$id
 
+original_stroke_ids <- as.integer(original_stroke_ids)
+
+
 #Obtaining the post-SMOTE Stroke cases from balanced_data#
 stroke_yes_post_smote <- balanced_data[balanced_data$stroke_yn == "Yes", ]
 
@@ -2319,21 +2322,33 @@ post_smote_stroke_ids <- as.integer(post_smote_stroke_ids)
 all(original_stroke_ids %in% post_smote_stroke_ids)
 ```
 
+```{r}
+ff_glimpse(balanced_data)
+```
+
 
 
 
 ```{r}
-# Identify the newly generated stroke cases that aren't in the original dataset
-new_stroke_cases <- anti_join(balanced_data, stroke_data, by = "id")
+# Step 1: Check for duplicates in the IDs
+post_smote_stroke_ids <- unique(post_smote_stroke_ids)  # Remove duplicates from post_SMOTE IDs
+original_stroke_ids <- unique(original_stroke_ids)  # Remove duplicates from original IDs
 
-# Append these new stroke cases to the original dataset
-stroke_data_updated <- bind_rows(stroke_data, new_stroke_cases)
+# Create a new dataframe for new stroke cases
+new_stroke_cases_df <- data.frame(
+  id = new_stroke_case_IDs, 
+  stroke_yn = "Yes"  # Set stroke_yn to "Yes" for the new stroke cases
+)
 
-# Verify the new distribution of stroke_yn
+# Merge new stroke cases with original stroke data
+stroke_data_updated <- stroke_data %>%
+  left_join(new_stroke_cases_df, by = "id", suffix = c("", "_new")) %>%
+  mutate(stroke_yn = if_else(!is.na(stroke_yn_new), "Yes", stroke_yn)) %>%
+  select(-stroke_yn_new)  # Drop the temporary column
+
+# Check the result
 table(stroke_data_updated$stroke_yn)
 ```
-
-
 
 
 ## Building a Shiny App
