@@ -17,9 +17,9 @@ knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
 
 pacman::p_load(tidyverse,knitr,kableExtra,finalfit,lubridate,data.table,
                janitor,flextable,survival,survminer,rmdHelpers, ggrepel,
-               scales,RColorBrewer,GGally,randomForest, caret,DT, gtsummary,cardx,
-               ggsurvfit,mice,patchwork,rsample, parsnip,recipes, workflows,tune,
-               ranger,yardstick,vip,tidymodels,naivebayes,class, Metrics,shiny,
+               scales,RColorBrewer,GGally,randomForest,caret,DT,gtsummary,cardx,
+               ggsurvfit,mice,patchwork,rsample, parsnip,recipes,workflows,tune,
+               ranger,yardstick,vip,tidymodels,naivebayes,class,Metrics,shiny,
                shinythemes,pROC,DMwR,smotefamily)
 
 ```
@@ -2230,9 +2230,9 @@ ff_glimpse(stroke_data)
 
 ```{r SMOTE to get stroke yes rate to 8.5%}
 # Apply SMOTE
-stroke_data_balanced <- SMOTE(stroke_yn ~ ., data = stroke_data)  
-
-table(stroke_data_balanced$stroke_yn)
+# stroke_data_balanced <- SMOTE(stroke_yn ~ ., data = stroke_data)  
+# 
+# table(stroke_data_balanced$stroke_yn)
 
 ```
 ```{r one hot encoding stroke data in X df to be suitable for SMOTE function}
@@ -2261,40 +2261,6 @@ target <- as.factor(target)
 head(target)
 
 ```
-
-```{r using the SMOTE function to balance outcome variable}
-# Step 1: Separate original 'Yes' cases (to retain them)
-stroke_yes <- stroke_data %>% filter(stroke_yn == "Yes")
-stroke_no <- stroke_data %>% filter(stroke_yn == "No")
-
-# Step 2: Apply SMOTE only to generate new 'Yes' cases
-X_no_stroke <- stroke_no[, !names(stroke_no) %in% "stroke_yn"]  # Features for 'No' cases
-target_no_stroke <- stroke_no$stroke_yn  # Target variable for 'No' cases
-
-# Apply SMOTE to generate synthetic 'Yes' cases
-smote_result <- SMOTE(X_no_stroke, target_no_stroke, K = 5, dup_size = 70)  # Generates new 'Yes' cases
-
-# Convert to dataframe and rename last column to stroke_yn
-smote_data <- as.data.frame(smote_result$data)
-colnames(smote_data)[ncol(smote_data)] <- "stroke_yn"
-
-# Step 3: Retain original 'Yes' cases and undersample 'No' cases to keep dataset at 4,253 rows
-num_new_yes <- round(0.085 * 4253)  # 8.5% of total dataset size
-num_keep_no <- 4253 - num_new_yes - nrow(stroke_yes)  # Remaining 'No' cases to keep
-
-# Randomly sample 'No' cases
-stroke_no_sampled <- stroke_no %>% sample_n(num_keep_no)
-
-# Randomly sample synthetic 'Yes' cases
-smote_yes_sampled <- smote_data %>% filter(stroke_yn == "Yes") %>% sample_n(num_new_yes)
-
-# Step 4: Merge everything back together
-balanced_stroke_data <- bind_rows(stroke_yes, stroke_no_sampled, smote_yes_sampled)
-
-# Step 5: Check final distribution
-table(balanced_stroke_data$stroke_yn)
-```
-
 
 ```{r using the SMOTE function to balance outcome variable}
 
@@ -2334,18 +2300,37 @@ table(balanced_data$stroke_yn)
 
 ```
 
+```{r checking that all the original Stroke cases are present in the post SMOTE Stroke IDs }
+
+#Obtaining the original Stroke cases from stroke_data#
+stroke_yes <- stroke_data[stroke_data$stroke_yn == "Yes", ]
+
+original_stroke_ids <- stroke_yes$id
+
+#Obtaining the post-SMOTE Stroke cases from balanced_data#
+stroke_yes_post_smote <- balanced_data[balanced_data$stroke_yn == "Yes", ]
+
+post_smote_stroke_ids <- stroke_yes_post_smote$id
+
+#removing decimal places#
+post_smote_stroke_ids <- as.integer(post_smote_stroke_ids)
+
+#Using all() check the original IDs are still present#
+all(original_stroke_ids %in% post_smote_stroke_ids)
+```
+
+
+
+
 ```{r}
-# The balanced_data object contains both synthetic and original instances in 'data' 
-# Access the 'data' part of the SMOTE result
-balanced_data_df <- balanced_data$data
+# Identify the newly generated stroke cases that aren't in the original dataset
+new_stroke_cases <- anti_join(balanced_data, stroke_data, by = "id")
 
-# Check if it's now a dataframe
-str(balanced_data_df)
+# Append these new stroke cases to the original dataset
+stroke_data_updated <- bind_rows(stroke_data, new_stroke_cases)
 
-# View the first few rows of the balanced data
-head(balanced_data_df)
-
-table(balanced_data_df$class)
+# Verify the new distribution of stroke_yn
+table(stroke_data_updated$stroke_yn)
 ```
 
 
