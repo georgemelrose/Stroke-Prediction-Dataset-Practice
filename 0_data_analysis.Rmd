@@ -20,7 +20,7 @@ pacman::p_load(tidyverse,knitr,kableExtra,finalfit,lubridate,data.table,
                scales,RColorBrewer,GGally,randomForest, caret,DT, gtsummary,cardx,
                ggsurvfit,mice,patchwork,rsample, parsnip,recipes, workflows,tune,
                ranger,yardstick,vip,tidymodels,naivebayes,class, Metrics,shiny,
-               shinythemes,pROC,DMwR)
+               shinythemes,pROC,DMwR,smotefamily)
 
 ```
 
@@ -2215,7 +2215,7 @@ stroke_data$bmi_category[is.na(stroke_data$bmi_category)] <- "Underweight"
 
 ```
 
-```{r}
+```{r adding unknown as a factor level to work type variable}
 # Add 'Unknown' as a factor level to work_type to make it suitable for SMOTE#
 
 stroke_data$work_type <- factor(stroke_data$work_type, levels = c(levels(stroke_data$work_type), "Unknown"))
@@ -2223,7 +2223,7 @@ stroke_data$work_type <- factor(stroke_data$work_type, levels = c(levels(stroke_
 stroke_data$work_type[is.na(stroke_data$work_type)] <- "Unknown"
 ```
 
-```{r}
+```{r checking the missingness of the stroke data df}
 ff_glimpse(stroke_data)
 ```
 
@@ -2235,7 +2235,7 @@ stroke_data_balanced <- SMOTE(stroke_yn ~ ., data = stroke_data)
 table(stroke_data_balanced$stroke_yn)
 
 ```
-```{r}
+```{r one hot encoding stroke data in X df to be suitable for SMOTE function}
 # Convert categorical columns to numeric (e.g., using one-hot encoding)
 # If you have factor columns, convert them into dummy variables using model.matrix
 X <- stroke_data[, !names(stroke_data) %in% "stroke_yn"]  # Exclude target variable
@@ -2258,15 +2258,80 @@ target <- stroke_data$stroke_yn  # The target variable (should already be numeri
 # Ensure target is a factor or numeric
 target <- as.factor(target)
 
-# Apply SMOTE to balance the data
-# K = 5 (default nearest neighbors), dup_size = 70% increase in stroke cases
-balanced_data <- SMOTE(X, target, K = 5, dup_size = 5)
+head(target)
 
-# Check the distribution of the balanced dataset
-table(balanced_data$target)
+```
 
-# View the balanced dataset
-head(balanced_data$data)
+```{r using the SMOTE function to balance outcome variable}
+# Step 1: Separate original 'Yes' cases (to retain them)
+stroke_yes <- stroke_data %>% filter(stroke_yn == "Yes")
+stroke_no <- stroke_data %>% filter(stroke_yn == "No")
+
+# Step 2: Apply SMOTE only to generate new 'Yes' cases
+X_no_stroke <- stroke_no[, !names(stroke_no) %in% "stroke_yn"]  # Features for 'No' cases
+target_no_stroke <- stroke_no$stroke_yn  # Target variable for 'No' cases
+
+# Apply SMOTE to generate synthetic 'Yes' cases
+smote_result <- SMOTE(X_no_stroke, target_no_stroke, K = 5, dup_size = 70)  # Generates new 'Yes' cases
+
+# Convert to dataframe and rename last column to stroke_yn
+smote_data <- as.data.frame(smote_result$data)
+colnames(smote_data)[ncol(smote_data)] <- "stroke_yn"
+
+# Step 3: Retain original 'Yes' cases and undersample 'No' cases to keep dataset at 4,253 rows
+num_new_yes <- round(0.085 * 4253)  # 8.5% of total dataset size
+num_keep_no <- 4253 - num_new_yes - nrow(stroke_yes)  # Remaining 'No' cases to keep
+
+# Randomly sample 'No' cases
+stroke_no_sampled <- stroke_no %>% sample_n(num_keep_no)
+
+# Randomly sample synthetic 'Yes' cases
+smote_yes_sampled <- smote_data %>% filter(stroke_yn == "Yes") %>% sample_n(num_new_yes)
+
+# Step 4: Merge everything back together
+balanced_stroke_data <- bind_rows(stroke_yes, stroke_no_sampled, smote_yes_sampled)
+
+# Step 5: Check final distribution
+table(balanced_stroke_data$stroke_yn)
+```
+
+
+```{r using the SMOTE function to balance outcome variable}
+
+# Define target count for 'Yes' cases
+total_size <- 4253  # Desired total dataset size
+target_yes <- round(0.085 * total_size)  # 8.5% of 4253 → 361 'Yes' cases
+
+# Apply SMOTE to oversample 'Yes' cases
+# K = Number of nearest neighbors to use when generating synthetic samples
+# Higher K → synthetic points are more spread out, using a larger neighborhood
+# Lower K → synthetic points are closer to existing minority points, staying more compact
+smote_result <- SMOTE(X, target, K = 5, dup_size = 20)  # dup_size controls oversampling
+
+# Extract synthetic and original data
+oversampled_data <- as.data.frame(smote_result$data)  
+colnames(oversampled_data)[ncol(oversampled_data)] <- "stroke_yn"  # Rename target column
+
+# Separate 'Yes' and 'No' cases
+stroke_yes <- oversampled_data[oversampled_data$stroke_yn == "Yes", ]
+stroke_no <- oversampled_data[oversampled_data$stroke_yn == "No", ]
+
+# Ensure we only keep the required 'Yes' cases
+stroke_yes_final <- stroke_yes[1:target_yes, ]  # Keep only the first 361 'Yes' cases
+
+# Calculate how many 'No' cases to keep
+num_no_to_keep <- total_size - target_yes  # Ensure total remains 4,253
+
+# Randomly sample 'No' cases to balance the dataset
+set.seed(123)  # For reproducibility
+stroke_no_sampled <- stroke_no[sample(nrow(stroke_no), num_no_to_keep, replace = FALSE), ]
+
+# Combine the new balanced dataset
+balanced_data <- rbind(stroke_yes_final, stroke_no_sampled)
+
+# Check distribution
+table(balanced_data$stroke_yn)
+
 ```
 
 ```{r}
