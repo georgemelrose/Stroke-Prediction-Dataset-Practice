@@ -7,6 +7,9 @@ output:
     toc: true
     toc_float: true
     code_folding: hide
+editor_options: 
+  markdown: 
+    wrap: 72
 ---
 
 ```{r setup, include=FALSE}
@@ -136,7 +139,20 @@ stroke_data$smoking_status[stroke_data$smoking_status == "Unknown"] <- NA
 stroke_data$smoking_status <- droplevels(stroke_data$smoking_status)
 ```
 
+```{r split data into test and train}
+set.seed(1234)
+
+
+stroke_split <- initial_split(stroke_data, prop = 0.8)
+# train_data
+stroke_training <- training(stroke_split)
+# test_data
+stroke_testing <- testing(stroke_split)
+```
+
 ### Handling Missingness
+
+#### Missingness in the whole original Stroke dataset
 
 ```{r checking missingness again after making variables numeric}
 ff_glimpse(stroke_data)
@@ -151,7 +167,11 @@ cat("Number of NAs in categorical BMI variable:", na_categorical_count, "\n")
 unique(stroke_data$bmi_category)
 ```
 
-There are 181 NAs in the original 'bmi' variable. These didn't show up in the first usage of ff_glimpse() as the variable was a *character* type, so N/A and a numeric value were treated the same. A second usage of ff_glimpse() shows the 181 NAs, which of course are then carried on to the categorical variable when that is made.
+There are 181 NAs in the original 'bmi' variable. These didn't show up
+in the first usage of ff_glimpse() as the variable was a *character*
+type, so N/A and a numeric value were treated the same. A second usage
+of ff_glimpse() shows the 181 NAs, which of course are then carried on
+to the categorical variable when that is made.
 
 ```{r missing values plot}
 explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
@@ -159,26 +179,46 @@ explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever
 dependent <- "stroke_yn"
 
  stroke_data %>% 
-  missing_plot(dependent, explanatory)
+  missing_plot(dependent, explanatory, title = "Missingness for the whole dataset")
 
  
 ```
 
 There are different types of missingness:
 
--   **MCAR (Missing Completely at Random)** - "Missing data values do not relate to any other data in the dataset and there is no pattern to the actual values of the missing data themselves."
+-   **MCAR (Missing Completely at Random)** - "Missing data values do
+    not relate to any other data in the dataset and there is no pattern
+    to the actual values of the missing data themselves."
 
--   **MAR (Missing at Random)** - "This is confusing and would be better named *missing conditionally at random*. Here, missingness in a particular variable has an association with one or more other variables in the dataset. However, the actual values of the missing data are random."
+-   **MAR (Missing at Random)** - "This is confusing and would be better
+    named *missing conditionally at random*. Here, missingness in a
+    particular variable has an association with one or more other
+    variables in the dataset. However, the actual values of the missing
+    data are random."
 
--   **MNAR (Missing not at random)** - "The pattern of missingness is related to other variables in the dataset, but in addition, *the actual values of the missing data are not random*."
+-   **MNAR (Missing not at random)** - "The pattern of missingness is
+    related to other variables in the dataset, but in addition, *the
+    actual values of the missing data are not random*."
 
-Fo example, in a different dataset, smoking status would be missing in females more likely to smoke but not in males.
+Fo example, in a different dataset, smoking status would be missing in
+females more likely to smoke but not in males.
 
-"Thus, the complete case female patients have different characteristics to the missing data female patients. For instance, the missing data female patients may be more likely to die after cancer treatment. Looking at our available population, ***we therefore under estimate the likelihood of a female dying from cancer treatment***."
+"Thus, the complete case female patients have different characteristics
+to the missing data female patients. For instance, the missing data
+female patients may be more likely to die after cancer treatment.
+Looking at our available population, ***we therefore under estimate the
+likelihood of a female dying from cancer treatment***."
 
-"In deciding whether data is MCAR or MAR, one approach is to explore patterns of missingness between levels of included variables. This is particularly important...for a primary outcome measure / dependent variable.
+"In deciding whether data is MCAR or MAR, one approach is to explore
+patterns of missingness between levels of included variables. This is
+particularly important...for a primary outcome measure / dependent
+variable.
 
-Take for example “death”. When that outcome is missing it is often for a particular reason. For example, perhaps patients undergoing emergency surgery were less likely to have complete records compared with those undergoing planned surgery. And of course, death is more likely after emergency surgery."
+Take for example “death”. When that outcome is missing it is often for a
+particular reason. For example, perhaps patients undergoing emergency
+surgery were less likely to have complete records compared with those
+undergoing planned surgery. And of course, death is more likely after
+emergency surgery."
 
 ```{r looking for patterns of missingness}
 
@@ -187,7 +227,7 @@ stroke_data %>%
 
 ```
 
-#### BMI
+##### BMI
 
 ```{r checking for associations between missing and observed data part 1 bmi}
 explanatory <- c("bmi","gender","hypertension_yn","ever_married")
@@ -218,15 +258,21 @@ stroke_data %>%
 
 Looking at the above 3 plots, the following can be observed:
 
--   There is more missingness for the BMI variable in those patients who have stroke than those who do not.
+-   There is more missingness for the BMI variable in those patients who
+    have stroke than those who do not.
 
--   There is also slightly more missingness in those with hypertension than those patients without it.
+-   There is also slightly more missingness in those with hypertension
+    than those patients without it.
 
--   In those patients with heart disease and an average older patients , there is also more BMI missingness.
+-   In those patients with heart disease and an average older patients ,
+    there is also more BMI missingness.
 
--   Given the above info., we can conclude that the BMI variable missingness is MAR - *missingness in a particular variable that has an association with one or more other variables in the dataset*.
+-   Given the above info., we can conclude that the BMI variable
+    missingness is MAR - *missingness in a particular variable that has
+    an association with one or more other variables in the dataset*.
 
-The relevant variables that have an association with missingness in bmi are selected for a single missing pairs plot below.
+The relevant variables that have an association with missingness in bmi
+are selected for a single missing pairs plot below.
 
 ```{r generating a missing pairs plot of associated variables strokeyn heartdisease hypertension age}
 
@@ -238,7 +284,7 @@ stroke_data %>%
 
 ```
 
-#### Smoking Status
+##### Smoking Status
 
 ```{r checking for associations between missing and observed data part 1 smoking}
 explanatory <- c("smoking_status", "bmi","gender","hypertension_yn")
@@ -260,13 +306,17 @@ stroke_data %>%
 
 Looking at the 2 above plots, the following can be seen:
 
--   There is more missingness for the smoking_status variable in those patients who have hypertension than those who do not.
+-   There is more missingness for the smoking_status variable in those
+    patients who have hypertension than those who do not.
 
--   There is significant difference in smoking_status missingness across 'Work Type'.
+-   There is significant difference in smoking_status missingness across
+    'Work Type'.
 
--   Given the above, we can conclude that the smoking_status variable missingness is also MAR.
+-   Given the above, we can conclude that the smoking_status variable
+    missingness is also MAR.
 
-The relevant variables that have an association with missingness in smoking_status are selected for a single missing pairs plot below.
+The relevant variables that have an association with missingness in
+smoking_status are selected for a single missing pairs plot below.
 
 ```{r generating a missing pairs plot of associated variables}
 
@@ -309,7 +359,11 @@ summary(stroke_data$smoking_status)
 
 ```
 
-In the gender and work_type variables there are factor levels with minuscule values - 'Other' in gender with 1 and 'Never_worked' in work_type with 5. These numbers are extremely small and likely to disturb further analysis so I'll make them NA so as to not lose the patients but not have the awkward category either.
+In the gender and work_type variables there are factor levels with
+minuscule values - 'Other' in gender with 1 and 'Never_worked' in
+work_type with 5. These numbers are extremely small and likely to
+disturb further analysis so I'll make them NA so as to not lose the
+patients but not have the awkward category either.
 
 ```{r making nas from and dropping factor levels with too little in them}
 
@@ -328,17 +382,93 @@ summary(stroke_data$work_type)
 
 ```
 
+#### Missingness in the training Stroke dataset
+
+To avoid data leakage, imputation shall have to be done on the
+respective stroke training and testing datasets rather than the whole
+'stroke_data' dataframe. Data leakage happens when information from the
+test set influences the training process, leading to overly optimistic
+performance estimates.If imputation happens before splitting, the
+imputer learns from the entire dataset, including the test set, which
+can introduce bias.
+
+This ensures that the test set remains unseen during training,
+preserving the integrity of model evaluation. To be pedantic, the above plots 
+code visualising missingness for all the dataframe and for the variables 
+showing missingness is run again. 
+
+
+```{r missing values plot for training data}
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","age_category")
+dependent <- "stroke_yn"
+
+ stroke_training %>% 
+  missing_plot(dependent, explanatory, title = "Missingness for Training Data")
+ 
+
+
+ 
+```
+
+
+```{r looking for patterns of missingness}
+
+stroke_training %>% 
+  missing_pattern(dependent, explanatory)
+
+```
+
+
+##### BMI
+
+```{r checking for associations between missing and observed data part 1 bmi}
+explanatory <- c("bmi","gender","hypertension_yn","ever_married")
+dependent <- "stroke_yn"
+
+stroke_training  %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed data part 2 bmi}
+explanatory <- c("bmi","work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed data part 3 bmi}
+explanatory <- c("bmi","heart_disease_yn","age")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
 ### MICE on MAR BMI & Smoking Status
 
-Multivariate Imputation by Chained Equations (mice) is "*...the process of filling in missing data using a best-estimate from all the other data that exists.*" (Section 11.8.1 of the HealthyR book)
+Multivariate Imputation by Chained Equations (mice) is "*...the process
+of filling in missing data using a best-estimate from all the other data
+that exists.*" (Section 11.8.1 of the HealthyR book)
 
-If missingness in BMI is predicted strongly by stroke outcome (and other observed variables), and the values of the missing data are random, then we can impute (best-guess) the missing BMI values using those variables.
+If missingness in BMI is predicted strongly by stroke outcome (and other
+observed variables), and the values of the missing data are random, then
+we can impute (best-guess) the missing BMI values using those variables.
 
-"*Imputation is not usually appropriate for the explanatory variable of interest or the outcome variable, although these can be used to impute other variables. In both cases, the hypothesis is that there is a meaningful association with other variables in the dataset, therefore it doesn’t make sense to use these variables to impute them.*"
+"*Imputation is not usually appropriate for the explanatory variable of
+interest or the outcome variable, although these can be used to impute
+other variables. In both cases, the hypothesis is that there is a
+meaningful association with other variables in the dataset, therefore it
+doesn’t make sense to use these variables to impute them.*"
 
 The multiple imputation process is as follows:
 
--   **Impute** missing data *m* times, resulting in *m* complete datasets.
+-   **Impute** missing data *m* times, resulting in *m* complete
+    datasets.
 
 -   **Diagnose** the quality of the impute values.
 
@@ -508,8 +638,10 @@ densityplot(fits,
                                    labels = levels(fits$data$smoking_status))))
 ```
 
-
-The above is a scatter plot of original and imputed data with the magenta points being the imputed data points and the blue points being the observed values. The matching shape is a good verification of the imputed values indeed being plausible.
+The above is a scatter plot of original and imputed data with the
+magenta points being the imputed data points and the blue points being
+the observed values. The matching shape is a good verification of the
+imputed values indeed being plausible.
 
 ```{r density plot of observed and imputed values for bmi}
 densityplot(fits, 
@@ -518,7 +650,9 @@ densityplot(fits,
             xlab = "BMI")
 ```
 
-The density of the imputed data for each imputed dataset is magenta and the density of the observed data is blue. Again, we expect the distributions to be similar.
+The density of the imputed data for each imputed dataset is magenta and
+the density of the observed data is blue. Again, we expect the
+distributions to be similar.
 
 ```{r extracting id and bmi and limiting to just ids wo valid bmi}
 
@@ -582,15 +716,23 @@ ff_glimpse(stroke_data)
 
 ### Removing Blood Glucose Variable
 
-The average glucose level variable can be considered redundant or less informative for exploratory data analysis (EDA) without additional context about when the readings were taken.
+The average glucose level variable can be considered redundant or less
+informative for exploratory data analysis (EDA) without additional
+context about when the readings were taken.
 
-Glucose levels can fluctuate significantly based on factors such as fasting status, recent meals, and time of day. For example, a reading taken shortly after eating will typically be higher than a fasting reading -
+Glucose levels can fluctuate significantly based on factors such as
+fasting status, recent meals, and time of day. For example, a reading
+taken shortly after eating will typically be higher than a fasting
+reading -
 
 ```{r blood glucose chart,  fig.cap="Blood Glucose Chart from 'Lark Health' "}
 knitr::include_graphics("BloodGlucoseChart.jpeg")
 ```
 
-Without knowing the conditions under which the glucose levels were measured, it becomes difficult to draw meaningful conclusions or identify trends during EDA. A reading labeled as "normal" may not actually reflect the patient’s metabolic health.
+Without knowing the conditions under which the glucose levels were
+measured, it becomes difficult to draw meaningful conclusions or
+identify trends during EDA. A reading labeled as "normal" may not
+actually reflect the patient’s metabolic health.
 
 ```{r removing glucose level variable from dataset and looking at data types of dataset}
 stroke_data <- stroke_data %>% select(-avg_glucose_level)
@@ -642,9 +784,12 @@ summary(stroke_data$age)
 
 ```
 
--   From the summary statistics we see that the mean and median are 50.2 years and 50.5 years respectively. This is an indication of the age variable being normally distributed.
+-   From the summary statistics we see that the mean and median are 50.2
+    years and 50.5 years respectively. This is an indication of the age
+    variable being normally distributed.
 
--   The minimum age is 18 as per the earlier filtering removing all children. The maximum age of a patient is 82.
+-   The minimum age is 18 as per the earlier filtering removing all
+    children. The maximum age of a patient is 82.
 
 ```{r counting the numbers and proportions of patients in the three different age categories}
 age_counts <- stroke_data %>%
@@ -682,7 +827,8 @@ ggplot(age_counts, aes(x = age_category, y = patient_count)) +
 
 ```
 
-The above bar chart is further confirmation that the age variable is indeed normally distributed.
+The above bar chart is further confirmation that the age variable is
+indeed normally distributed.
 
 ```{r making an age counts table stratified by stroke yes or no}
 age_counts_w_stroke <- stroke_data %>%
@@ -698,7 +844,12 @@ age_counts_w_stroke_table <- age_counts_w_stroke %>% rename("Percentage (%)" = p
 flextable(age_counts_w_stroke_table)
 ```
 
-The table above displaying the no.patients in each age category stratified by those having or not having a stroke shows that the no.patients having a stroke is heavily skewed towards the oldest age category. 13.6% of patients in the \>60 age category had a stroke, 3.62% of patients in the 36-60 age category had a stroke, and just 1 patients/0.0959% of patients in the 18-35 age category had a stroke.
+The table above displaying the no.patients in each age category
+stratified by those having or not having a stroke shows that the
+no.patients having a stroke is heavily skewed towards the oldest age
+category. 13.6% of patients in the \>60 age category had a stroke, 3.62%
+of patients in the 36-60 age category had a stroke, and just 1
+patients/0.0959% of patients in the 18-35 age category had a stroke.
 
 ```{r plotting distribution of patients across age and stroke categories}
 ggplot(age_counts_w_stroke, aes(x = age_category, y = patient_count, fill = stroke_yn)) +
@@ -736,7 +887,12 @@ summary(stroke_data$bmi)
 
 ```
 
--   From the summary statistics we see that the mean and median BMIs are 29.2 and 30.4 respectively. This is an indication of the BMI variable being normally distributed. The maximum and minimum BMI values of 11.3 and 92 are way beyond any conceivable measurements and so may be outliers that need to be removed. There are 181 NAs out of 4,254 observations.
+-   From the summary statistics we see that the mean and median BMIs are
+    29.2 and 30.4 respectively. This is an indication of the BMI
+    variable being normally distributed. The maximum and minimum BMI
+    values of 11.3 and 92 are way beyond any conceivable measurements
+    and so may be outliers that need to be removed. There are 181 NAs
+    out of 4,254 observations.
 
 ```{r counting the numbers and proportions of patients in the four different bmi categories}
 bmi_counts <- stroke_data %>%
@@ -753,7 +909,9 @@ flextable(bmi_counts_table)
 
 ```
 
-The above table shows that this dataset has the vast majority of patients as overweight and obese, with only 20.3% at a normal, healthy BMI.
+The above table shows that this dataset has the vast majority of
+patients as overweight and obese, with only 20.3% at a normal, healthy
+BMI.
 
 ```{r plotting distribution of patients across bmi categories}
 #Code to remove NAs from bmi_counts#
@@ -781,7 +939,8 @@ ggplot(bmi_counts, aes(x = bmi_category, y = patient_count)) +
 
 ```
 
-The distribution of patients is left skewed towards the 'Overweight' and 'Obese' categories.
+The distribution of patients is left skewed towards the 'Overweight' and
+'Obese' categories.
 
 ```{r making an bmi counts table stratified by stroke yes or no}
 bmi_counts_w_stroke <- stroke_data %>%
@@ -797,7 +956,9 @@ bmi_counts_w_stroke_table <- bmi_counts_w_stroke %>% rename("Percentage (%)" = p
 flextable(bmi_counts_w_stroke_table)
 ```
 
-The above summary table shows the percentage of patients having a stroke is higher in the 'Overweight' and 'Obese' BMI categories than in the 'Normal Weight' and 'Underweight' categories.
+The above summary table shows the percentage of patients having a stroke
+is higher in the 'Overweight' and 'Obese' BMI categories than in the
+'Normal Weight' and 'Underweight' categories.
 
 ```{r plotting distribution of patients across bmi and stroke categories}
 
@@ -826,7 +987,8 @@ ggplot(bmi_counts_w_stroke, aes(x = bmi_category, y = patient_count, fill = stro
 
 ```
 
-There is a higher rate of stroke associated with the 'Overweight' and 'Obese' BMI categories but perhaps not a significant level.
+There is a higher rate of stroke associated with the 'Overweight' and
+'Obese' BMI categories but perhaps not a significant level.
 
 ### Gender
 
@@ -845,7 +1007,10 @@ flextable(gender_counts_table)
 
 ```
 
-The cohort is majority female at 60.6% and 39.4% male. One patient is marked as 'other'. It is unclear what this means - an input mistake, transgender? To not disturb any other modelling, this patient is removed.
+The cohort is majority female at 60.6% and 39.4% male. One patient is
+marked as 'other'. It is unclear what this means - an input mistake,
+transgender? To not disturb any other modelling, this patient is
+removed.
 
 ```{r removing the one patient who has gender as other}
 
@@ -896,7 +1061,9 @@ gender_counts_w_stroke_table <- gender_counts_w_stroke %>% rename("Percentage (%
 flextable(gender_counts_w_stroke_table)
 ```
 
-Interestingly, whilst there are many more female than male patients, the rate of stroke between the 2 genders stays consistent. 5.4% (139) of females experienced stroke and 6.44% (108) of males experienced stroke.
+Interestingly, whilst there are many more female than male patients, the
+rate of stroke between the 2 genders stays consistent. 5.4% (139) of
+females experienced stroke and 6.44% (108) of males experienced stroke.
 
 ```{r plotting distribution of patients across gender and stroke categories}
 ggplot(gender_counts_w_stroke, aes(x = gender, y = patient_count, fill = stroke_yn)) +
@@ -974,7 +1141,9 @@ ever_married_counts_w_stroke_table <- ever_married_counts_w_stroke %>% rename("P
 flextable(ever_married_counts_w_stroke_table)
 ```
 
-The above table shows that the proportion of those patients experiencing stroke who had ever married (6.56%) was more than twice as much as the proportion of patients experiencing stroke who had never married (3%).
+The above table shows that the proportion of those patients experiencing
+stroke who had ever married (6.56%) was more than twice as much as the
+proportion of patients experiencing stroke who had never married (3%).
 
 ```{r plotting distribution of patients across marriage and stroke categories}
 ggplot(ever_married_counts_w_stroke, aes(x = ever_married, y = patient_count, fill = stroke_yn)) +
@@ -1076,7 +1245,9 @@ ggplot(hypertension_counts_w_stroke, aes(x = hypertension_yn, y = patient_count,
 
 ```
 
-The proportion of patients with hypertension who had a stroke (13.3%) is 2.75x higher than the proportion of patients without hypertension who had a stroke (4.82%).
+The proportion of patients with hypertension who had a stroke (13.3%) is
+2.75x higher than the proportion of patients without hypertension who
+had a stroke (4.82%).
 
 ### Work Type
 
@@ -1411,7 +1582,8 @@ ggsurvplot(
 )
 ```
 
-Quantifying the effect size for multiple variables using Cox Regression -
+Quantifying the effect size for multiple variables using Cox Regression
+-
 
 Some key assumptions of the model:
 
@@ -1473,7 +1645,6 @@ coxph(Surv(follow_up_years, status) ~ age_category, data = stroke_data) %>%
   tbl_regression(exp = TRUE) 
 ```
 
-
 ### Gender
 
 ```{r comparing survival time for gender, echo=FALSE}
@@ -1482,8 +1653,6 @@ survfit(Surv(follow_up_years, status) ~ gender, data = stroke_data)
 
 fit_gender <- survfit(Surv(follow_up_years, status) ~ gender, data = stroke_data)
 ```
-
-
 
 ```{r survival curve for gender categories,fig.width=11.5,fig.height=5.3,fig.align = 'center'}
 legend_labels <- c("Female", "Male")
@@ -1525,8 +1694,6 @@ ggsurvplot(
 coxph(Surv(follow_up_years, status) ~ gender, data = stroke_data) %>% 
   tbl_regression(exp = TRUE) 
 ```
-
-
 
 ### Cox Regression {.tabset .tabset-fade .tabset-pills}
 
@@ -1583,22 +1750,32 @@ tab[[2]] %>% knitr::kable()
 
 Key takeaways from Model 1:
 
-*   A good concordance/C-statistic. This indicates how well the model predicts the order of events. A value of 0.747 means that in 74.7% of the cases, the model correctly predicts that a patient who had a stroke earlier was at higher risk than a patient who did not or had the event later. Values range from 0.5 (no better than random guessing) to 1.0 (perfect prediction). The model's concordance is reasonably good.
+-   A good concordance/C-statistic. This indicates how well the model
+    predicts the order of events. A value of 0.747 means that in 74.7%
+    of the cases, the model correctly predicts that a patient who had a
+    stroke earlier was at higher risk than a patient who did not or had
+    the event later. Values range from 0.5 (no better than random
+    guessing) to 1.0 (perfect prediction). The model's concordance is
+    reasonably good.
 
-*  R-squared measures how much of the variability in (stroke occurrence) is 
-explained by the model. Here, your model explains 4.8% of the variability in stroke risk.
-The max possible R-squared of 0.576 represents the theoretical upper bound if 
-the model perfectly explained the outcome variance. This low R-squared is likely
-attributable to the random generation of follow-up times - not real data! 
+-   R-squared measures how much of the variability in (stroke
+    occurrence) is explained by the model. Here, your model explains
+    4.8% of the variability in stroke risk. The max possible R-squared
+    of 0.576 represents the theoretical upper bound if the model
+    perfectly explained the outcome variance. This low R-squared is
+    likely attributable to the random generation of follow-up times -
+    not real data!
 
-* The likelihood ratio test compares the model to a null model (with no predictors).
-A high test statistic with a very low p-value (p = 0.000) indicates that the 
-model significantly improves the fit compared to the null model.
-This confirms that the predictors collectively contribute to explaining stroke risk.
+-   The likelihood ratio test compares the model to a null model (with
+    no predictors). A high test statistic with a very low p-value (p =
+    0.000) indicates that the model significantly improves the fit
+    compared to the null model. This confirms that the predictors
+    collectively contribute to explaining stroke risk.
 
-* With 247 events out of 4253 individuals, the model has a moderate number of 
-events to estimate the relationships. The concordance SE of 0.018 shows a 
-relatively tight estimate of the concordance, suggesting reliable ranking performance.
+-   With 247 events out of 4253 individuals, the model has a moderate
+    number of events to estimate the relationships. The concordance SE
+    of 0.018 shows a relatively tight estimate of the concordance,
+    suggesting reliable ranking performance.
 
 #### Model 2 - BMI and 'Work Type' excluded
 
@@ -1650,9 +1827,7 @@ tab[[2]] %>% knitr::kable()
 
 ```
 
-
 #### Model 3 - Only Statistically Significant Variables
-
 
 ```{r model 3 with only statistically significant variables}
 dependent = "Surv(follow_up_years, stroke)"
@@ -1702,22 +1877,9 @@ tab[[2]] %>% knitr::kable()
 
 ```
 
-
 ## Prediction Modelling Part 1 {.tabset .tabset-fade .tabset-pills}
 
 ### Preprocessing data
-
-```{r split data into test and train}
-set.seed(1234)
-
-
-stroke_split <- initial_split(stroke_data, prop = 0.8)
-# train_data
-stroke_training <- training(stroke_split)
-# test_data
-stroke_testing <- testing(stroke_split)
-```
-
 
 ```{r removing unecessary variables}
 stroke_training <- stroke_training %>% select(-id, -hypertension_yn, -heart_disease_yn,
@@ -1730,7 +1892,6 @@ stroke_testing <- stroke_testing %>% select(-id, -hypertension_yn, -heart_diseas
                                             -follow_up_time_days,-follow_up_years,
                                               -status,-gender,-residence_type)
 ```
-
 
 ### Random Forest
 
@@ -1843,7 +2004,6 @@ forest_importances$Std <- std
 head(forest_importances)
 ```
 
-
 ```{r testing RF model on testing dataset}
 
 # Predict on the testing dataset
@@ -1903,11 +2063,7 @@ roc_auc
 
 ```
 
-
-
-
 ### Naive Bayes Classification
-
 
 ```{r making an nb model}
 
@@ -1959,8 +2115,8 @@ p1 <- predict(nb_model, stroke_training)
 ```{r accuracy of nb model}
 1 - sum(diag(tab1)) / sum(tab1)
 ```
-Naives Bayes has an accuracy of 99.9% on the training data.
 
+Naives Bayes has an accuracy of 99.9% on the training data.
 
 ```{r testing nb on testing data}
 # --- Extension to Testing Data ---
@@ -2010,12 +2166,12 @@ stroke_training <- stroke_training %>% filter(!is.na(work_type))
 stroke_testing <- stroke_testing %>% filter(!is.na(work_type))
 ```
 
-
 ```{r double checking there are no nas before doing knn, echo=FALSE}
 ff_glimpse(stroke_training)
 
 ff_glimpse(stroke_testing)
 ```
+
 ```{r making categorical variables numeric for knn}
 
 # Convert categorical variables into numeric format (one-hot encoding)
@@ -2052,7 +2208,6 @@ stroke_testing_numeric <- stroke_testing %>%
 head(stroke_testing_numeric)
 ```
 
-
 ```{r Fitting KNN Model to training dataset}
 knn_model <- knn(
   train = stroke_training_numeric,
@@ -2063,8 +2218,6 @@ knn_model <- knn(
 )
 head(knn_model)
 ```
-
-
 
 ```{r cm for testing data}
 # Confusion Matrix
@@ -2102,7 +2255,6 @@ f1_no <- 2 * (precision_no * recall_no) / (precision_no + recall_no)
 cat("F1 Score (No, 0):", f1_no, "\n")
 ```
 
-
 ```{r auroc curve for knn model}
 attributes(knn_model)$prob
 
@@ -2113,11 +2265,9 @@ plot(roc(stroke_testing$stroke_yn, attributes(knn_model)$prob),
      print.auc=T)
 ```
 
-
 ```{r saving knn model to a .rds file}
 saveRDS(knn_model, "knn_model.rds")
 ```
-
 
 ### Evaluating and Selecting Models
 
@@ -2174,8 +2324,6 @@ Metrics::auc(p1, stroke_training$stroke_yn)
 Metrics::rmse(p1, stroke_training$stroke_yn)
 ```
 
-
-
 ```{r getting metrics for the KNN model}
 # K-Nearest Neighbor (KNN) classification (test results)
 # KNN is a so called 'lazy learning' algorithm so doesn't compute the training
@@ -2200,6 +2348,7 @@ Metrics::auc(knn_model, stroke_testing_numeric$stroke_yn)
 # to calculate rmse
 Metrics::rmse(knn_model, stroke_testing_numeric$stroke_yn)
 ```
+
 ## Prediction Modelling Part 2 - SMOTE-Balanced Classes (8.5% Stroke) {.tabset .tabset-fade .tabset-pills}
 
 ```{r adding back in underweight bmi category before SMOTE}
@@ -2227,7 +2376,6 @@ stroke_data$work_type[is.na(stroke_data$work_type)] <- "Unknown"
 ff_glimpse(stroke_data)
 ```
 
-
 ```{r SMOTE to get stroke yes rate to 8.5%}
 # Apply SMOTE
 # stroke_data_balanced <- SMOTE(stroke_yn ~ ., data = stroke_data)  
@@ -2235,6 +2383,7 @@ ff_glimpse(stroke_data)
 # table(stroke_data_balanced$stroke_yn)
 
 ```
+
 ```{r one hot encoding stroke data in X df to be suitable for SMOTE function}
 # Convert categorical columns to numeric (e.g., using one-hot encoding)
 # If you have factor columns, convert them into dummy variables using model.matrix
@@ -2326,9 +2475,6 @@ all(original_stroke_ids %in% post_smote_stroke_ids)
 ff_glimpse(balanced_data)
 ```
 
-
-
-
 ```{r}
 # Step 1: Check for duplicates in the IDs
 post_smote_stroke_ids <- unique(post_smote_stroke_ids)  # Remove duplicates from post_SMOTE IDs
@@ -2349,7 +2495,6 @@ stroke_data_updated <- stroke_data %>%
 # Check the result
 table(stroke_data_updated$stroke_yn)
 ```
-
 
 ## Building a Shiny App
 
