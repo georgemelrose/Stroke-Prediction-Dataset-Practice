@@ -165,6 +165,37 @@ stroke_data$work_type <- stroke_data$work_type %>%
   ff_label("Work Type")
 ```
 
+
+### Removing Blood Glucose Variable
+
+The average glucose level variable can be considered redundant or less
+informative for exploratory data analysis (EDA) without additional
+context about when the readings were taken.
+
+Glucose levels can fluctuate significantly based on factors such as
+fasting status, recent meals, and time of day. For example, a reading
+taken shortly after eating will typically be higher than a fasting
+reading -
+
+```{r blood glucose chart,  fig.cap="Blood Glucose Chart from 'Lark Health' "}
+knitr::include_graphics("BloodGlucoseChart.jpeg")
+```
+
+Without knowing the conditions under which the glucose levels were
+measured, it becomes difficult to draw meaningful conclusions or
+identify trends during EDA. A reading labeled as "normal" may not
+actually reflect the patient’s metabolic health.
+
+```{r removing glucose level variable from dataset and looking at data types of dataset}
+stroke_data <- stroke_data %>% select(-avg_glucose_level)
+
+str(stroke_data)
+
+datatable(stroke_data[1:10, ],options = list(scrollX = TRUE))
+```
+
+
+
 ```{r split data into test and train}
 set.seed(1234)
 
@@ -592,60 +623,13 @@ stroke_training %>%
   missing_predictorMatrix(
     drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
                  "work_type","residence_type","stroke_yn","id"),
-    drop_from_imputer = c("gender","ever_married","residence_type","smoking_status",
-                          "id")
+    drop_from_imputer = c("gender", "ever_married", "residence_type", "id")
   ) -> predM
-```
 
-
-### MICE on MAR BMI & Smoking Status
-
-Multivariate Imputation by Chained Equations (mice) is "*...the process
-of filling in missing data using a best-estimate from all the other data
-that exists.*" (Section 11.8.1 of the HealthyR book)
-
-If missingness in BMI is predicted strongly by stroke outcome (and other
-observed variables), and the values of the missing data are random, then
-we can impute (best-guess) the missing BMI values using those variables.
-
-"*Imputation is not usually appropriate for the explanatory variable of
-interest or the outcome variable, although these can be used to impute
-other variables. In both cases, the hypothesis is that there is a
-meaningful association with other variables in the dataset, therefore it
-doesn’t make sense to use these variables to impute them.*"
-
-The multiple imputation process is as follows:
-
--   **Impute** missing data *m* times, resulting in *m* complete
-    datasets.
-
--   **Diagnose** the quality of the impute values.
-
--   **Analyse** each completed dataset.
-
--   **Pool** the results of the reported analyses.
-
-#### Impute
-
-```{r choosing variables to be imputed and be used in imputation }
-
-explanatory <- c("id","bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
-                 "work_type","residence_type","smoking_status")
-dependent <- "stroke_yn"
-
-#Choosing variables to not be imputed but still used by the mice function# 
-stroke_data %>% 
-  select(dependent, explanatory) %>% 
-  missing_predictorMatrix(
-    drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
-                 "work_type","residence_type","stroke_yn","id"),
-    drop_from_imputer = c("gender","ever_married","residence_type","smoking_status",
-                          "id")
-  ) -> predM
 ```
 
 ```{r make 10 imputed datasets and run our logistic regression analysis on each set }
-fits <- stroke_data %>% 
+fits <- stroke_training %>% 
   select(dependent, explanatory) %>% 
   
   # Run imputation with 10 imputed sets
@@ -655,6 +639,7 @@ fits <- stroke_data %>%
   with(glm(formula(ff_formula(dependent, explanatory)), 
            family="binomial"))
 ```
+
 
 #### Diagnose
 
@@ -685,7 +670,7 @@ fits_pool <- fits %>%
   pool()
 
 ## Can be passed to or_plot
-stroke_data %>% 
+stroke_training %>% 
   or_plot(dependent, explanatory, glmfit = fits_pool, table_text_size=4)
 ```
 
@@ -699,12 +684,12 @@ fit_imputed <- fits_pool %>%
 # Use finalfit merge methods to create and compare results
 explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
 
-table_uni_multi <- stroke_data %>% 
+table_uni_multi <- stroke_training %>% 
   finalfit(dependent, explanatory, keep_fit_id = TRUE) 
 
 explanatory = c("gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
 
-fit_multi_no_bmi <- stroke_data %>% 
+fit_multi_no_bmi <- stroke_training %>% 
   glmmulti(dependent, explanatory) %>% 
   fit2df(estimate_suffix = " (multivariable without BMI)") 
 
@@ -725,12 +710,12 @@ fit_imputed <- fits_pool %>%
 # Use finalfit merge methods to create and compare results
 explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
 
-table_uni_multi <- stroke_data %>% 
+table_uni_multi <- stroke_training %>% 
   finalfit(dependent, explanatory, keep_fit_id = TRUE) 
 
 explanatory = c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type")
 
-fit_multi_no_smoking_status <- stroke_data %>% 
+fit_multi_no_smoking_status <- stroke_training %>% 
   glmmulti(dependent, explanatory) %>% 
   fit2df(estimate_suffix = " (multivariable without Smoking Status)") 
 
@@ -743,29 +728,30 @@ table_imputed <-
 table_imputed 
 ```
 
-#### Generating Data & Adding Imputed Values to Original Dataset
+
+#### Generating Data & Adding Imputed Values to stroke_training 
 
 ```{r doing mice again to save and extract the data}
 explanatory <- c("id","bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
                  "work_type","residence_type","smoking_status")
 dependent <- "stroke_yn"
 
-stroke_data %>% 
+stroke_training %>% 
   select(dependent, explanatory) %>% 
   missing_predictorMatrix(
   drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
                  "work_type","residence_type","stroke_yn","id"),
-    drop_from_imputer = c("gender","ever_married","residence_type","smoking_status",
-                          "id")
+    drop_from_imputer = c("gender","ever_married","residence_type","id")
   ) -> predM
 
-fits <- stroke_data %>%
+fits <- stroke_training %>%
 select(dependent, explanatory) %>%
 mice(m = 10, predictorMatrix = predM)
 
 
 completedData <- complete(fits, action = 1)
 ```
+
 
 ```{r scatterplot of original and imputed data bmi vs age}
 #scatter plot of original and imputed data with the magenta points being the imputed data points and the blue points being the observed values#
@@ -787,10 +773,10 @@ densityplot(fits,
                                    labels = levels(fits$data$smoking_status))))
 ```
 
-The above is a scatter plot of original and imputed data with the
-magenta points being the imputed data points and the blue points being
-the observed values. The matching shape is a good verification of the
-imputed values indeed being plausible.
+The above is a scatter plot of original and imputed data with the magenta points 
+being the imputed data points and the blue points being the observed values. 
+The matching shape is a good verification of the imputed values indeed being 
+plausible.
 
 ```{r density plot of observed and imputed values for bmi}
 densityplot(fits, 
@@ -805,7 +791,7 @@ distributions to be similar.
 
 ```{r extracting id and bmi and limiting to just ids wo valid bmi}
 
-ids_wo_bmi <- stroke_data %>% filter(is.na(bmi))
+ids_wo_bmi <- stroke_training %>% filter(is.na(bmi))
 
 ids_wo_bmi <- ids_wo_bmi$id
 
@@ -816,7 +802,7 @@ imputed_bmi_values <- imputed_bmi_values %>% filter(id %in% ids_wo_bmi)
 
 ```{r adding imputed bmi values back to stroke data df}
 
-stroke_data <- stroke_data %>%
+stroke_training <- stroke_training %>%
   left_join(imputed_bmi_values, by = "id", suffix = c("", ".new")) %>%
   mutate(bmi = coalesce(bmi, bmi.new)) %>%
   select(-bmi.new)
@@ -824,7 +810,7 @@ stroke_data <- stroke_data %>%
 
 ```{r extracting id and smoking status and limiting to just ids wo valid smoking status}
 
-ids_wo_smoking_status <- stroke_data %>% filter(is.na(smoking_status))
+ids_wo_smoking_status <- stroke_training %>% filter(is.na(smoking_status))
 
 ids_wo_smoking_status  <- ids_wo_smoking_status$id
 
@@ -835,7 +821,7 @@ imputed_smoking_status_values <- imputed_smoking_status_values %>% filter(id %in
 
 ```{r adding imputed smoking_status values back to stroke data df}
 
-stroke_data <- stroke_data %>%
+stroke_training <- stroke_training %>%
   left_join(imputed_smoking_status_values, by = "id", suffix = c("", ".new")) %>%
   mutate(smoking_status = coalesce(smoking_status, smoking_status.new)) %>%
   select(-smoking_status.new)
@@ -843,7 +829,7 @@ stroke_data <- stroke_data %>%
 
 ```{r redoing the bmi category variable based on imputed data}
 
-stroke_data <- stroke_data %>% mutate(
+stroke_training <- stroke_training %>% mutate(
   
   # Create BMI categories
   bmi_category = case_when(
@@ -859,37 +845,10 @@ stroke_data <- stroke_data %>% mutate(
 ```
 
 ```{r double check missingness has been sorted}
-ff_glimpse(stroke_data)
+ff_glimpse(stroke_training)
 
 ```
 
-### Removing Blood Glucose Variable
-
-The average glucose level variable can be considered redundant or less
-informative for exploratory data analysis (EDA) without additional
-context about when the readings were taken.
-
-Glucose levels can fluctuate significantly based on factors such as
-fasting status, recent meals, and time of day. For example, a reading
-taken shortly after eating will typically be higher than a fasting
-reading -
-
-```{r blood glucose chart,  fig.cap="Blood Glucose Chart from 'Lark Health' "}
-knitr::include_graphics("BloodGlucoseChart.jpeg")
-```
-
-Without knowing the conditions under which the glucose levels were
-measured, it becomes difficult to draw meaningful conclusions or
-identify trends during EDA. A reading labeled as "normal" may not
-actually reflect the patient’s metabolic health.
-
-```{r removing glucose level variable from dataset and looking at data types of dataset}
-stroke_data <- stroke_data %>% select(-avg_glucose_level)
-
-str(stroke_data)
-
-datatable(stroke_data[1:10, ],options = list(scrollX = TRUE))
-```
 
 ## Exploratory Data Analysis - Summary Statistics {.tabset .tabset-fade .tabset-pills}
 
