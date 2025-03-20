@@ -333,7 +333,7 @@ stroke_data %>%
 Looking at the 2 above plots, the following can be seen:
 
 -   There is more missingness for the smoking_status variable in those
-    patients who have hypertension than those who do not.
+    patients who do not have hypertension than those who do.
 
 -   There is significant difference in smoking_status missingness across
     'Work Type'.
@@ -513,13 +513,88 @@ stroke_training %>%
 
 ```
 
-```{r checking for associations between missing and observed data part 2 smoking}
+```{r checking for associations between missing and observed data part 2 smoking in training data}
 explanatory <- c("smoking_status","work_type","residence_type","heart_disease_yn", "age")
 dependent <- "stroke_yn"
 
 stroke_data %>% 
   missing_pairs(dependent, explanatory, position = "fill")
 
+```
+
+
+Looking at the 2 above plots, we can observe the following for the training data:
+
+    
+-   There is more missingness for the smoking_status variable in those
+    patients who don't have hypertension than those who do.
+
+-   There is significant difference in smoking_status missingness across
+    'Work Type'.
+
+-   Given the above, we can conclude that the smoking_status variable
+    missingness is also MAR.
+
+A single missing pairs plot below is made of the most relevant variables.
+
+
+```{r generating a missing pairs plot of associated variables in training data smoking status}
+
+explanatory <- c("smoking_status","hypertension_yn","work_type")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill",title = "Missing Data Matrix - smoking_status")
+
+
+```
+
+
+#### MICE on training data MAR BMI & Smoking Status
+
+Multivariate Imputation by Chained Equations (mice) is "*...the process
+of filling in missing data using a best-estimate from all the other data
+that exists.*" (Section 11.8.1 of the HealthyR book)
+
+If missingness in BMI is predicted strongly by stroke outcome (and other
+observed variables), and the values of the missing data are random, then
+we can impute (best-guess) the missing BMI values using those variables.
+
+"*Imputation is not usually appropriate for the explanatory variable of
+interest or the outcome variable, although these can be used to impute
+other variables. In both cases, the hypothesis is that there is a
+meaningful association with other variables in the dataset, therefore it
+doesn’t make sense to use these variables to impute them.*"
+
+The multiple imputation process is as follows:
+
+-   **Impute** missing data *m* times, resulting in *m* complete
+    datasets.
+
+-   **Diagnose** the quality of the impute values.
+
+-   **Analyse** each completed dataset.
+
+-   **Pool** the results of the reported analyses.
+
+
+#### Impute
+
+```{r choosing variables to be imputed and be used in imputation }
+
+explanatory <- c("id","bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+#Choosing variables to not be imputed but still used by the mice function# 
+stroke_training %>% 
+  select(dependent, explanatory) %>% 
+  missing_predictorMatrix(
+    drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","stroke_yn","id"),
+    drop_from_imputer = c("gender","ever_married","residence_type","smoking_status",
+                          "id")
+  ) -> predM
 ```
 
 
