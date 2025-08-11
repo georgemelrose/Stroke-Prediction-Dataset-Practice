@@ -452,7 +452,8 @@ can introduce bias.
 This ensures that the test set remains unseen during training,
 preserving the integrity of model evaluation. To be pedantic, the above plots 
 code visualising missingness for all the dataframe and for the variables 
-showing missingness is run again. 
+showing missingness is run again for training data in this section. Testing data
+missingness and subsequent MICE is covered in the next section. 
 
 
 ```{r missing values plot for training data}
@@ -848,6 +849,249 @@ stroke_training <- stroke_training %>% mutate(
 ff_glimpse(stroke_training)
 
 ```
+
+
+#### MICE on testing data MAR BMI & Smoking Status
+
+```{r choosing variables to be imputed and be used in imputation }
+
+explanatory <- c("id","bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+#Choosing variables to not be imputed but still used by the mice function# 
+stroke_testing %>% 
+  select(dependent, explanatory) %>% 
+  missing_predictorMatrix(
+    drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","stroke_yn","id"),
+    drop_from_imputer = c("gender", "ever_married", "residence_type", "id")
+  ) -> predM
+
+```
+
+```{r make 10 imputed datasets and run our logistic regression analysis on each set }
+fits <- stroke_testing %>% 
+  select(dependent, explanatory) %>% 
+  
+  # Run imputation with 10 imputed sets
+  mice(m = 10, predictorMatrix = predM) %>% 
+  
+  # Run logistic regression on each imputed set
+  with(glm(formula(ff_formula(dependent, explanatory)), 
+           family="binomial"))
+```
+
+
+#### Diagnose
+
+```{r extracting aics}
+# Examples of extracting metrics from fits and taking the mean
+## AICs
+fits %>% 
+  getfit() %>% 
+  purrr::map(AIC) %>%
+  unlist() %>% 
+  mean()
+```
+
+```{r obtaining the c statistic}
+# C-statistic
+fits %>% 
+  getfit() %>% 
+  purrr::map(~ pROC::roc(.x$y, .x$fitted)$auc) %>% 
+  unlist() %>% 
+  mean()
+```
+
+#### Analyse
+
+```{r pool the results of the model and visualise in an or plot}
+# Pool results
+fits_pool <- fits %>% 
+  pool()
+
+## Can be passed to or_plot
+stroke_testing %>% 
+  or_plot(dependent, explanatory, glmfit = fits_pool, table_text_size=4)
+```
+
+#### Pool
+
+```{r summarise log reg models that do not have and have imputed bmi}
+# Summarise and put in table
+fit_imputed <- fits_pool %>%                                  
+  fit2df(estimate_name = "OR (multiple imputation)", exp = TRUE)
+
+# Use finalfit merge methods to create and compare results
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
+
+table_uni_multi <- stroke_testing %>% 
+  finalfit(dependent, explanatory, keep_fit_id = TRUE) 
+
+explanatory = c("gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
+
+fit_multi_no_bmi <- stroke_testing %>% 
+  glmmulti(dependent, explanatory) %>% 
+  fit2df(estimate_suffix = " (multivariable without BMI)") 
+
+# Combine to final table
+table_imputed <- 
+  table_uni_multi %>% 
+  ff_merge(fit_multi_no_bmi) %>% 
+  ff_merge(fit_imputed, last_merge = TRUE)
+
+table_imputed 
+```
+
+```{r summarise log reg models that do not have and have imputed smoking status}
+# Summarise and put in table
+fit_imputed <- fits_pool %>%                                  
+  fit2df(estimate_name = "OR (multiple imputation)", exp = TRUE)
+
+# Use finalfit merge methods to create and compare results
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
+
+table_uni_multi <- stroke_testing %>% 
+  finalfit(dependent, explanatory, keep_fit_id = TRUE) 
+
+explanatory = c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type")
+
+fit_multi_no_smoking_status <- stroke_testing %>% 
+  glmmulti(dependent, explanatory) %>% 
+  fit2df(estimate_suffix = " (multivariable without Smoking Status)") 
+
+# Combine to final table
+table_imputed <- 
+  table_uni_multi %>% 
+  ff_merge(fit_multi_no_smoking_status) %>% 
+  ff_merge(fit_imputed, last_merge = TRUE)
+
+table_imputed 
+```
+
+
+#### Generating Data & Adding Imputed Values to stroke_testing 
+
+```{r doing mice again to save and extract the data}
+explanatory <- c("id","bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_testing %>% 
+  select(dependent, explanatory) %>% 
+  missing_predictorMatrix(
+  drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","stroke_yn","id"),
+    drop_from_imputer = c("gender","ever_married","residence_type","id")
+  ) -> predM
+
+fits <- stroke_testing %>%
+select(dependent, explanatory) %>%
+mice(m = 10, predictorMatrix = predM)
+
+
+completedData <- complete(fits, action = 1)
+```
+
+
+```{r scatterplot of original and imputed data bmi vs age}
+#scatter plot of original and imputed data with the magenta points being the imputed data points and the blue points being the observed values#
+
+xyplot(fits,bmi ~ age,pch=18,cex=1)
+
+```
+
+```{r density plot of observed and imputed values for smoking status}
+# Convert your factor variable to a factor with appropriate levels
+fits$data$smoking_status <- factor(fits$data$smoking_status)
+
+# Now, create the density plot again with factor levels on the x-axis
+densityplot(fits, 
+            ~ smoking_status,                     # Factor variable with levels
+            main = "Density of Observed and Imputed Values for Smoking Status",
+            xlab = "Smoking Status",               # Custom x-axis label
+            scales = list(x = list(at = 1:length(levels(fits$data$smoking_status)), 
+                                   labels = levels(fits$data$smoking_status))))
+```
+
+The above is a scatter plot of original and imputed data with the magenta points 
+being the imputed data points and the blue points being the observed values. 
+The matching shape is a good verification of the imputed values indeed being 
+plausible.
+
+```{r density plot of observed and imputed values for bmi}
+densityplot(fits, 
+            ~ bmi,                     # Factor variable with levels
+            main = "Density of Observed and Imputed Values for BMI",
+            xlab = "BMI")
+```
+
+The density of the imputed data for each imputed dataset is magenta and
+the density of the observed data is blue. Again, we expect the
+distributions to be similar.
+
+```{r extracting id and bmi and limiting to just ids wo valid bmi}
+
+ids_wo_bmi <- stroke_testing %>% filter(is.na(bmi))
+
+ids_wo_bmi <- ids_wo_bmi$id
+
+imputed_bmi_values <- completedData %>% select(id, bmi)
+
+imputed_bmi_values <- imputed_bmi_values %>% filter(id %in% ids_wo_bmi)
+```
+
+```{r adding imputed bmi values back to stroke data df}
+
+stroke_testing <- stroke_testing %>%
+  left_join(imputed_bmi_values, by = "id", suffix = c("", ".new")) %>%
+  mutate(bmi = coalesce(bmi, bmi.new)) %>%
+  select(-bmi.new)
+```
+
+```{r extracting id and smoking status and limiting to just ids wo valid smoking status}
+
+ids_wo_smoking_status <- stroke_testing %>% filter(is.na(smoking_status))
+
+ids_wo_smoking_status  <- ids_wo_smoking_status$id
+
+imputed_smoking_status_values <- completedData %>% select(id, smoking_status)
+
+imputed_smoking_status_values <- imputed_smoking_status_values %>% filter(id %in% ids_wo_smoking_status)
+```
+
+```{r adding imputed smoking_status values back to stroke data df}
+
+stroke_testing <- stroke_testing %>%
+  left_join(imputed_smoking_status_values, by = "id", suffix = c("", ".new")) %>%
+  mutate(smoking_status = coalesce(smoking_status, smoking_status.new)) %>%
+  select(-smoking_status.new)
+```
+
+```{r redoing the bmi category variable based on imputed data}
+
+stroke_testing <- stroke_testing %>% mutate(
+  
+  # Create BMI categories
+  bmi_category = case_when(
+    bmi < 18.5 ~ "Underweight",
+    bmi >= 18.5 & bmi <= 24.9 ~ "Normal weight",
+    bmi >= 25 & bmi <= 29.9 ~ "Overweight",
+    bmi >= 30 ~ "Obese",
+    TRUE ~ NA_character_
+  ) %>% factor(levels = c("Normal weight", "Underweight", "Overweight", "Obese"))
+  
+)
+  
+```
+
+```{r double check missingness has been sorted}
+ff_glimpse(stroke_testing)
+
+```
+
+
 
 
 ## Exploratory Data Analysis - Summary Statistics {.tabset .tabset-fade .tabset-pills}
@@ -2583,6 +2827,7 @@ all(original_stroke_ids %in% post_smote_stroke_ids)
 ```
 
 ```{r}
+
 ff_glimpse(balanced_data)
 ```
 
