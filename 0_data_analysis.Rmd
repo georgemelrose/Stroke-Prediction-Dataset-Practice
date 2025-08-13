@@ -1525,6 +1525,7 @@ of patients in the 36-60 age category had a stroke, and just 1
 patients/0.0959% of patients in the 18-35 age category had a stroke.
 
 ```{r plotting distribution of patients across age and stroke categories}
+
 ggplot(age_counts_w_stroke, aes(x = age_category, y = patient_count, fill = stroke_yn)) +
   geom_col(position = "dodge", alpha = 0.8) +
   geom_text(aes(label = patient_count), 
@@ -2558,6 +2559,7 @@ tab[[2]] %>% knitr::kable()
 ### Preprocessing data
 
 ```{r removing unecessary variables}
+
 stroke_training <- stroke_training %>% select(-id, -hypertension_yn, -heart_disease_yn,
                                               -age_category, -bmi_category,-stroke,
                                               -follow_up_time_days,-follow_up_years,
@@ -2660,6 +2662,7 @@ rf_training_results %>% count(.pred_class, truth)  # Confusion matrix: compare p
 ```
 
 ```{r Random Forest feature importance}
+
 # Extract feature importance from the fitted random forest model
 importances <- rf_fit %>%
   extract_fit_parsnip() %>%
@@ -2678,6 +2681,7 @@ forest_importances$Std <- std
 
 # View the feature importances with standard errors
 head(forest_importances)
+
 ```
 
 ```{r testing RF model on testing dataset}
@@ -2749,6 +2753,7 @@ plot(nb_model)
 ```
 
 ```{r fitting nb model on training data}
+
 # Predict probabilities on the training data
 nb_training_probs <- predict(nb_model, stroke_training, type = "prob")
 
@@ -2778,6 +2783,7 @@ roc_auc <- nb_training_results %>%
 
 # Display ROC AUC
 roc_auc
+
 ```
 
 ```{r making an object of the nb model on training data}
@@ -2795,6 +2801,7 @@ p1 <- predict(nb_model, stroke_training)
 Naives Bayes has an accuracy of 99.9% on the training data.
 
 ```{r testing nb on testing data}
+
 # --- Extension to Testing Data ---
 
 # Predict probabilities on the testing data
@@ -2826,11 +2833,13 @@ roc_auc <- nb_testing_results %>%
 
 # Display ROC AUC
 roc_auc
+
 ```
 
 ### K-Nearest Neighbor Classfication
 
 ```{r ensuring there are no nas before doing knn, echo=FALSE}
+
 ff_glimpse(stroke_training)
 
 ff_glimpse(stroke_testing)
@@ -2840,12 +2849,15 @@ ff_glimpse(stroke_testing)
 stroke_training <- stroke_training %>% filter(!is.na(work_type)) 
 
 stroke_testing <- stroke_testing %>% filter(!is.na(work_type))
+
 ```
 
 ```{r double checking there are no nas before doing knn, echo=FALSE}
+
 ff_glimpse(stroke_training)
 
 ff_glimpse(stroke_testing)
+
 ```
 
 ```{r making categorical variables numeric for knn}
@@ -3061,9 +3073,18 @@ ff_glimpse(stroke_data)
 ```
 
 ```{r one hot encoding stroke data in X df to be suitable for SMOTE function}
+
 # Convert categorical columns to numeric (e.g., using one-hot encoding)
 # If you have factor columns, convert them into dummy variables using model.matrix
-X <- stroke_data[, !names(stroke_data) %in% "stroke_yn"]  # Exclude target variable
+X <- stroke_data[, !names(stroke_data) %in% "stroke"]  # Exclude target variable
+
+X <- X %>% select(-stroke_yn)
+
+X$gender <- as.factor(X$gender)
+
+X$ever_married <- as.factor(X$ever_married)
+
+
 
 # Convert factors into numeric columns (one-hot encoding)
 X <- data.frame(lapply(X, function(x) {
@@ -3078,10 +3099,10 @@ X <- data.frame(lapply(X, function(x) {
 str(X)
 
 # Prepare target variable
-target <- stroke_data$stroke_yn  # The target variable (should already be numeric or a factor)
+target <- stroke_data$stroke  # The target variable (should already be numeric or a factor)
 
 # Ensure target is a factor or numeric
-target <- as.factor(target)
+target <- as.numeric(target)
 
 head(target)
 
@@ -3100,12 +3121,15 @@ target_yes <- round(0.085 * total_size)  # 8.5% of 4253 → 361 'Yes' cases
 smote_result <- SMOTE(X, target, K = 5, dup_size = 20)  # dup_size controls oversampling
 
 # Extract synthetic and original data
-oversampled_data <- as.data.frame(smote_result$data)  
-colnames(oversampled_data)[ncol(oversampled_data)] <- "stroke_yn"  # Rename target column
+
+oversampled_data <- as.data.frame(smote_result$data)
+colnames(oversampled_data)[ncol(oversampled_data)] <- "stroke"  # Rename target column
+
+oversampled_data$stroke <- as.numeric(as.character(oversampled_data$stroke))
 
 # Separate 'Yes' and 'No' cases
-stroke_yes <- oversampled_data[oversampled_data$stroke_yn == "Yes", ]
-stroke_no <- oversampled_data[oversampled_data$stroke_yn == "No", ]
+stroke_yes <- oversampled_data[oversampled_data$stroke == 1, ]
+stroke_no <- oversampled_data[oversampled_data$stroke == 0, ]
 
 # Ensure we only keep the required 'Yes' cases
 stroke_yes_final <- stroke_yes[1:target_yes, ]  # Keep only the first 361 'Yes' cases
@@ -3121,7 +3145,7 @@ stroke_no_sampled <- stroke_no[sample(nrow(stroke_no), num_no_to_keep, replace =
 balanced_data <- rbind(stroke_yes_final, stroke_no_sampled)
 
 # Check distribution
-table(balanced_data$stroke_yn)
+table(balanced_data$stroke)
 
 ```
 
@@ -3136,7 +3160,7 @@ original_stroke_ids <- as.integer(original_stroke_ids)
 
 
 #Obtaining the post-SMOTE Stroke cases from balanced_data#
-stroke_yes_post_smote <- balanced_data[balanced_data$stroke_yn == "Yes", ]
+stroke_yes_post_smote <- balanced_data[balanced_data$stroke == 1, ]
 
 post_smote_stroke_ids <- stroke_yes_post_smote$id
 
@@ -3153,13 +3177,14 @@ ff_glimpse(balanced_data)
 ```
 
 ```{r}
+
 # Step 1: Check for duplicates in the IDs
 post_smote_stroke_ids <- unique(post_smote_stroke_ids)  # Remove duplicates from post_SMOTE IDs
 original_stroke_ids <- unique(original_stroke_ids)  # Remove duplicates from original IDs
 
 # Create a new dataframe for new stroke cases
 new_stroke_cases_df <- data.frame(
-  id = new_stroke_case_IDs, 
+  id = post_smote_stroke_ids, 
   stroke_yn = "Yes"  # Set stroke_yn to "Yes" for the new stroke cases
 )
 
