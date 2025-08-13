@@ -846,9 +846,273 @@ stroke_training <- stroke_training %>% mutate(
 ```
 
 ```{r double check missingness has been sorted}
+
+stroke_training <- stroke_training %>%
+mutate(across(where(is.factor),droplevels))
+
 ff_glimpse(stroke_training)
 
 ```
+
+
+
+```{r missing values plot for training data}
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","age_category")
+dependent <- "stroke_yn"
+
+ stroke_training %>% 
+  missing_plot(dependent, explanatory, title = "Missingness for Training Data")
+ 
+```
+
+
+```{r looking for patterns of missingness in the training data}
+
+stroke_training %>% 
+  missing_pattern(dependent, explanatory)
+
+```
+
+
+##### BMI
+
+```{r checking for associations between missing and observed training data part 1 bmi}
+explanatory <- c("bmi","gender","hypertension_yn","ever_married")
+dependent <- "stroke_yn"
+
+stroke_training  %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed training data part 2 bmi}
+explanatory <- c("bmi","work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+
+```
+
+```{r checking for associations between missing and observed training data part 3 bmi}
+explanatory <- c("bmi","heart_disease_yn","age")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+
+The above 3 plots for the stroke training data have the same patterns as for the
+whole 'stroke_data' dataset:
+
+-   More missingness for the BMI variable in those patients who have stroke than
+    those who do not.
+
+-   Slightly more missingness in those with hypertension than those patients 
+    without it.
+
+-   In those patients with heart disease and on average older patients ,
+    there is also more BMI missingness.
+
+-   MAR for stroke_training.
+
+Again, the relevant variables that have an association with missingness in bmi
+are selected for a single missing pairs plot.
+
+
+```{r generating a missing pairs plot of associated variables strokeyn heartdisease hypertension age in training data}
+
+explanatory <- c("bmi","heart_disease_yn","hypertension_yn","age")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill", title = "Missing Data Matrix - BMI")
+
+```
+
+##### Smoking Status
+
+```{r checking for associations between missing and observed data part 1 smoking in training data}
+explanatory <- c("smoking_status", "bmi","gender","hypertension_yn")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed data part 2 smoking in training data}
+explanatory <- c("smoking_status","work_type","residence_type","heart_disease_yn", "age")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+
+Looking at the 2 above plots, we can observe the following for the training data:
+
+    
+-   There is more missingness for the smoking_status variable in those
+    patients who don't have hypertension than those who do.
+
+-   There is significant difference in smoking_status missingness across
+    'Work Type'.
+
+-   Given the above, we can conclude that the smoking_status variable
+    missingness is also MAR.
+
+A single missing pairs plot below is made of the most relevant variables.
+
+
+```{r generating a missing pairs plot of associated variables in training data smoking status}
+
+explanatory <- c("smoking_status","hypertension_yn","work_type")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill",title = "Missing Data Matrix - smoking_status")
+
+
+```
+
+
+
+
+
+#### Missingness in the testing Stroke dataset
+
+
+```{r missing values plot for testing data}
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","age_category")
+dependent <- "stroke_yn"
+
+ stroke_testing %>% 
+  missing_plot(dependent, explanatory, title = "Missingness for testing Data")
+ 
+```
+
+
+```{r looking for patterns of missingness in the testing data}
+
+stroke_testing %>% 
+  missing_pattern(dependent, explanatory)
+
+```
+
+
+##### BMI
+
+```{r checking for associations between missing and observed testing data part 1 bmi}
+explanatory <- c("bmi","gender","hypertension_yn","ever_married")
+dependent <- "stroke_yn"
+
+stroke_testing  %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed testing data part 2 bmi}
+explanatory <- c("bmi","work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_testing %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+
+```
+
+```{r checking for associations between missing and observed testing data part 3 bmi}
+explanatory <- c("bmi","heart_disease_yn","age")
+dependent <- "stroke_yn"
+
+stroke_testing %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+
+The above 3 plots for the stroke testing data have the same patterns as for the
+whole 'stroke_data' dataset:
+
+-   More missingness for the BMI variable in those patients who have stroke than
+    those who do not.
+
+-   Slightly more missingness in those with hypertension than those patients 
+    without it.
+
+-   In those patients with heart disease and on average older patients ,
+    there is also more BMI missingness.
+
+-   MAR for stroke_testing.
+
+Once more, the relevant variables that have an association with missingness in BMI
+are selected for a single missing pairs plot.
+
+
+```{r generating a missing pairs plot of associated variables strokeyn heartdisease hypertension age in testing data}
+
+explanatory <- c("bmi","heart_disease_yn","hypertension_yn","age")
+dependent <- "stroke_yn"
+
+stroke_testing %>% 
+  missing_pairs(dependent, explanatory, position = "fill", title = "Missing Data Matrix - BMI")
+
+```
+
+##### Smoking Status
+
+```{r checking for associations between missing and observed data part 1 smoking in testing data}
+explanatory <- c("smoking_status", "bmi","gender","hypertension_yn")
+dependent <- "stroke_yn"
+
+stroke_testing %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed data part 2 smoking in testing data}
+explanatory <- c("smoking_status","work_type","residence_type","heart_disease_yn", "age")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+
+Looking at the 2 above plots, we can observe the following for the testing data:
+
+    
+-   There is more missingness for the smoking_status variable in those
+    patients who don't have hypertension than those who do.
+
+-   There is significant difference in smoking_status missingness across
+    'Work Type'.
+
+-   Given the above, we can conclude that the smoking_status variable
+    missingness is also MAR.
+
+A single missing pairs plot below is made of the most relevant variables.
+
+
+```{r generating a missing pairs plot of associated variables in testing data smoking status}
+
+explanatory <- c("smoking_status","hypertension_yn","work_type")
+dependent <- "stroke_yn"
+
+stroke_testing %>% 
+  missing_pairs(dependent, explanatory, position = "fill",title = "Missing Data Matrix - smoking_status")
+
+
+```
+
 
 
 #### MICE on testing data MAR BMI & Smoking Status
@@ -974,6 +1238,7 @@ table_imputed
 #### Generating Data & Adding Imputed Values to stroke_testing 
 
 ```{r doing mice again to save and extract the data}
+
 explanatory <- c("id","bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
                  "work_type","residence_type","smoking_status")
 dependent <- "stroke_yn"
@@ -992,6 +1257,7 @@ mice(m = 10, predictorMatrix = predM)
 
 
 completedData <- complete(fits, action = 1)
+
 ```
 
 
@@ -1040,6 +1306,7 @@ ids_wo_bmi <- ids_wo_bmi$id
 imputed_bmi_values <- completedData %>% select(id, bmi)
 
 imputed_bmi_values <- imputed_bmi_values %>% filter(id %in% ids_wo_bmi)
+
 ```
 
 ```{r adding imputed bmi values back to stroke data df}
@@ -1048,6 +1315,7 @@ stroke_testing <- stroke_testing %>%
   left_join(imputed_bmi_values, by = "id", suffix = c("", ".new")) %>%
   mutate(bmi = coalesce(bmi, bmi.new)) %>%
   select(-bmi.new)
+
 ```
 
 ```{r extracting id and smoking status and limiting to just ids wo valid smoking status}
@@ -1059,6 +1327,7 @@ ids_wo_smoking_status  <- ids_wo_smoking_status$id
 imputed_smoking_status_values <- completedData %>% select(id, smoking_status)
 
 imputed_smoking_status_values <- imputed_smoking_status_values %>% filter(id %in% ids_wo_smoking_status)
+
 ```
 
 ```{r adding imputed smoking_status values back to stroke data df}
@@ -1067,6 +1336,7 @@ stroke_testing <- stroke_testing %>%
   left_join(imputed_smoking_status_values, by = "id", suffix = c("", ".new")) %>%
   mutate(smoking_status = coalesce(smoking_status, smoking_status.new)) %>%
   select(-smoking_status.new)
+
 ```
 
 ```{r redoing the bmi category variable based on imputed data}
@@ -1086,7 +1356,11 @@ stroke_testing <- stroke_testing %>% mutate(
   
 ```
 
-```{r double check missingness has been sorted}
+```{r double check missingness has been sorted in testing data}
+
+stroke_testing <- stroke_testing %>%
+mutate(across(where(is.factor),droplevels))
+
 ff_glimpse(stroke_testing)
 
 ```
