@@ -1366,11 +1366,57 @@ ff_glimpse(stroke_testing)
 ```
 
 
+```{r missing values plot for testing data}
+
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","age_category")
+dependent <- "stroke_yn"
+
+ stroke_testing %>% 
+  missing_plot(dependent, explanatory, title = "Missingness for testing Data")
+ 
+```
+
+
+```{r looking for patterns of missingness in the testing data}
+
+stroke_testing %>% 
+  missing_pattern(dependent, explanatory)
+
+```
+
+```{r recombining the training and testing data for a full df for descriptives}
+
+stroke_data <- rbind(stroke_training, stroke_testing)
+
+
+```
+
+
+```{r missing values plot for stroke data df}
+
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","age_category")
+dependent <- "stroke_yn"
+
+ stroke_data %>% 
+  missing_plot(dependent, explanatory, title = "Missingness for stoke_data df")
+ 
+```
+
+
+```{r looking for patterns of missingness in the data data}
+
+stroke_data %>% 
+  missing_pattern(dependent, explanatory)
+
+```
 
 
 ## Exploratory Data Analysis - Summary Statistics {.tabset .tabset-fade .tabset-pills}
 
 ```{r reorder factor variable levels, echo=FALSE}
+
 #work type#
 
 stroke_data$work_type <- factor(stroke_data$work_type , levels = c("Private", "Govt_job", "Self-employed")) %>% relevel(ref = "Private")
@@ -1433,6 +1479,7 @@ flextable(age_counts_table)
 ```
 
 ```{r plotting distribution of patients across age categories}
+
 ggplot(age_counts, aes(x = age_category, y = patient_count)) +
   geom_col(fill = "blue", alpha = 0.8) +
   geom_text(aes(label = patient_count), vjust = -0.5, size = 3.5, color = "darkblue") +
