@@ -2954,7 +2954,9 @@ plot(roc(stroke_testing$stroke_yn, attributes(knn_model)$prob),
 ```
 
 ```{r saving knn model to a .rds file}
+
 saveRDS(knn_model, "knn_model.rds")
+
 ```
 
 ### Evaluating and Selecting Models
@@ -3171,7 +3173,7 @@ post_smote_stroke_ids <- as.integer(post_smote_stroke_ids)
 all(original_stroke_ids %in% post_smote_stroke_ids)
 ```
 
-```{r}
+```{r checking the data}
 
 ff_glimpse(balanced_data)
 ```
