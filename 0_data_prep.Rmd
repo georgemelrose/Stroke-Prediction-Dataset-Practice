@@ -1,0 +1,1422 @@
+---
+title: "0 - Data Preparation"
+author: "George Melrose"
+date: "`r Sys.Date()`"
+output: 
+ html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+
+rm(list = ls())
+
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
+
+pacman::p_load(tidyverse,knitr,kableExtra,finalfit,lubridate,data.table,
+               janitor,flextable,rmdHelpers, ggrepel,
+               scales,RColorBrewer,GGally,DT,gtsummary,cardx,
+               ggsurvfit,mice,patchwork,rsample, parsnip,recipes,workflows,tune,
+               ranger,yardstick,vip,tidymodels,class,Metrics)
+
+```
+
+## Formatting Data {.tabset .tabset-fade .tabset-pills}
+
+### First look at the data
+
+```{r loading in data}
+stroke_data <- read_csv("healthcare-dataset-stroke-data.csv")
+```
+
+```{r looking at the data}
+str(stroke_data)
+```
+
+```{r checking overall dataset summarys stats and missingess}
+ff_glimpse(stroke_data)
+```
+
+```{r removing children from the dataset and format binary variables}
+
+#Removing children as lifestyle factors will be far less connected to pediatric stroke - https://www.stroke.org.uk/stroke/childhood/about #
+
+#No.rows with children#
+print(paste("The number of rows of the data with children included -", nrow(stroke_data)))
+
+#Removing children by filtering out all rows with age<18#
+children <- stroke_data %>% filter(age < 18)
+
+print(paste("The number of rows of the data that are children (age<18) -", nrow(children)))
+
+stroke_data <- stroke_data %>% filter(age >= 18)
+
+print(paste("The number of rows of the data without children included -", nrow(stroke_data)))
+
+#Creating yes/no (yn) versions of the binary outcome variables#
+stroke_data$hypertension_yn <- as.factor(ifelse(stroke_data$hypertension == 1, "Yes", "No"))
+stroke_data$heart_disease_yn <- as.factor(ifelse(stroke_data$heart_disease == 1, "Yes", "No"))
+stroke_data$stroke_yn <- as.factor(ifelse(stroke_data$stroke == 1, "Yes", "No"))
+
+#re-leveling above yn variables to have "No" as the default and adding ff_label command for cleaner formatting in finalfit plots#
+
+stroke_data <- stroke_data %>% mutate(
+  hypertension_yn = relevel(factor(hypertension_yn), ref = "No") %>% 
+    ff_label("Hypertension (Yes/No)"),
+  
+  heart_disease_yn = relevel(factor(heart_disease_yn), ref = "No") %>% 
+    ff_label("Heart Disease (Yes/No)"),
+  
+  stroke_yn = relevel(factor(stroke_yn), ref = "No") %>% 
+    ff_label("Stroke (Yes/No)")
+)
+
+```
+
+```{r adding follow up time for survival analysis}
+set.seed(123)  # For reproducibility
+
+# Simulate follow-up times in days
+stroke_data <- stroke_data %>% 
+  mutate(
+    follow_up_time_days = runif(n(), min = 0, max = 1825),  # Time between 0 and 5 years for all
+    # Assume the event occurs within the observed time or they are censored
+    status = ifelse(stroke == 1, 1, 0)  # 1 = event (stroke), 0 = censored (no stroke)
+  )
+
+# Making up a follow up time in years
+stroke_data <- stroke_data %>%
+  mutate(
+    follow_up_time_days = as.numeric(follow_up_time_days),  # Replace with your column name
+    follow_up_years = follow_up_time_days / 365         # Convert days to years
+  )
+
+# Show sample data with follow-up time in days
+head(stroke_data)
+
+datatable(stroke_data[1:10, ],options = list(scrollX = TRUE))
+```
+
+```{r making categorical variables of numeric variables}
+stroke_data$bmi <- as.numeric(stroke_data$bmi)
+
+stroke_data <- stroke_data %>% mutate(
+  # Create age categories
+  # Only 2 categories created as 18-35 year olds have only 1 stroke so meaningless
+  # to include them separately
+  age_category = case_when(
+   age < 60 ~ "<60",
+   age >= 60 & age < 70 ~ "60-69",
+   age >= 70 & age < 80 ~ "70-79",
+   age >= 80 ~ ">80"
+  ) %>% factor(levels = c("<60","60-69","70-79",">80")),
+  
+  # Create BMI categories
+  bmi_category = case_when(
+    bmi < 18.5 ~ "Underweight",
+    bmi >= 18.5 & bmi <= 24.9 ~ "Normal weight",
+    bmi >= 25 & bmi <= 29.9 ~ "Overweight",
+    bmi >= 30 ~ "Obese",
+    TRUE ~ NA_character_
+  ) %>% factor(levels = c("Underweight", "Normal weight", "Overweight", "Obese"))
+  
+)
+  
+```
+
+```{r marking unknowns in smoking status as na}
+# Recode 'Unknown' to NA in all relevant columns
+stroke_data$smoking_status <- factor(stroke_data$smoking_status) # Ensure smoking_status is a factor
+stroke_data$smoking_status[stroke_data$smoking_status == "Unknown"] <- NA
+
+# Optionally drop the 'Unknown' level from the factor levels
+stroke_data$smoking_status <- droplevels(stroke_data$smoking_status)
+```
+
+```{r doing ff labels for different variables, echo = FALSE}
+stroke_data$age_category <- stroke_data$age_category %>%
+  ff_label("Age(years)")
+
+stroke_data$bmi <- stroke_data$bmi %>%
+  ff_label("BMI")
+
+stroke_data$bmi_category <- stroke_data$bmi_category %>%
+  ff_label("BMI (category)")
+
+stroke_data$ever_married <- stroke_data$ever_married %>%
+  ff_label("Ever Married?")
+
+stroke_data$gender <- stroke_data$gender %>%
+  ff_label("Gender")
+
+stroke_data$residence_type <- stroke_data$residence_type %>%
+  ff_label("Residence Type")
+
+stroke_data$smoking_status <- stroke_data$smoking_status %>%
+  ff_label("Smoking Status")
+
+stroke_data$work_type <- stroke_data$work_type %>%
+  ff_label("Work Type")
+```
+
+
+### Removing Blood Glucose Variable
+
+The average glucose level variable can be considered redundant or less
+informative for exploratory data analysis (EDA) without additional
+context about when the readings were taken.
+
+Glucose levels can fluctuate significantly based on factors such as
+fasting status, recent meals, and time of day. For example, a reading
+taken shortly after eating will typically be higher than a fasting
+reading -
+
+```{r blood glucose chart,  fig.cap="Blood Glucose Chart from 'Lark Health' "}
+knitr::include_graphics("BloodGlucoseChart.jpeg")
+```
+
+Without knowing the conditions under which the glucose levels were
+measured, it becomes difficult to draw meaningful conclusions or
+identify trends during EDA. A reading labeled as "normal" may not
+actually reflect the patient’s metabolic health.
+
+```{r removing glucose level variable from dataset and looking at data types of dataset}
+stroke_data <- stroke_data %>% select(-avg_glucose_level)
+
+str(stroke_data)
+
+datatable(stroke_data[1:10, ],options = list(scrollX = TRUE))
+```
+
+
+
+```{r split data into test and train}
+set.seed(1234)
+
+
+stroke_split <- initial_split(stroke_data, prop = 0.8)
+# train_data
+stroke_training <- training(stroke_split)
+# test_data
+stroke_testing <- testing(stroke_split)
+```
+
+### Handling Missingness
+
+#### Missingness in the whole original Stroke dataset
+
+```{r checking missingness again after making variables numeric}
+ff_glimpse(stroke_data)
+```
+
+```{r checking missingness in the bmi category variable }
+# Check how many NAs are in the categorical variable and inspect its unique values
+na_categorical_count <- sum(is.na(stroke_data$bmi_category))
+cat("Number of NAs in categorical BMI variable:", na_categorical_count, "\n")
+
+# View unique BMI category values
+unique(stroke_data$bmi_category)
+```
+
+There are 181 NAs in the original 'bmi' variable. These didn't show up
+in the first usage of ff_glimpse() as the variable was a *character*
+type, so N/A and a numeric value were treated the same. A second usage
+of ff_glimpse() shows the 181 NAs, which of course are then carried on
+to the categorical variable when that is made.
+
+```{r missing values plot}
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","age_category")
+dependent <- "stroke_yn"
+
+ stroke_data %>% 
+  missing_plot(dependent, explanatory, title = "Missingness for the whole dataset")
+
+ 
+```
+
+There are different types of missingness:
+
+-   **MCAR (Missing Completely at Random)** - "Missing data values do
+    not relate to any other data in the dataset and there is no pattern
+    to the actual values of the missing data themselves."
+
+-   **MAR (Missing at Random)** - "This is confusing and would be better
+    named *missing conditionally at random*. Here, missingness in a
+    particular variable has an association with one or more other
+    variables in the dataset. However, the actual values of the missing
+    data are random."
+
+-   **MNAR (Missing not at random)** - "The pattern of missingness is
+    related to other variables in the dataset, but in addition, *the
+    actual values of the missing data are not random*."
+
+Fo example, in a different dataset, smoking status would be missing in
+females more likely to smoke but not in males.
+
+"Thus, the complete case female patients have different characteristics
+to the missing data female patients. For instance, the missing data
+female patients may be more likely to die after cancer treatment.
+Looking at our available population, ***we therefore under estimate the
+likelihood of a female dying from cancer treatment***."
+
+"In deciding whether data is MCAR or MAR, one approach is to explore
+patterns of missingness between levels of included variables. This is
+particularly important...for a primary outcome measure / dependent
+variable.
+
+Take for example “death”. When that outcome is missing it is often for a
+particular reason. For example, perhaps patients undergoing emergency
+surgery were less likely to have complete records compared with those
+undergoing planned surgery. And of course, death is more likely after
+emergency surgery."
+
+```{r looking for patterns of missingness}
+
+stroke_data %>% 
+  missing_pattern(dependent, explanatory)
+
+```
+
+##### BMI
+
+```{r checking for associations between missing and observed data part 1 bmi}
+explanatory <- c("bmi","gender","hypertension_yn","ever_married")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed data part 2 bmi}
+explanatory <- c("bmi","work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed data part 3 bmi}
+explanatory <- c("bmi","heart_disease_yn","age")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+Looking at the above 3 plots, the following can be observed:
+
+-   There is more missingness for the BMI variable in those patients who
+    have stroke than those who do not.
+
+-   There is also slightly more missingness in those with hypertension
+    than those patients without it.
+
+-   In those patients with heart disease and an average older patients ,
+    there is also more BMI missingness.
+
+-   Given the above info., we can conclude that the BMI variable
+    missingness is MAR - *missingness in a particular variable that has
+    an association with one or more other variables in the dataset*.
+
+The relevant variables that have an association with missingness in bmi
+are selected for a single missing pairs plot below.
+
+```{r generating a missing pairs plot of associated variables strokeyn heartdisease hypertension age}
+
+explanatory <- c("bmi","heart_disease_yn","hypertension_yn","age")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill", title = "Missing Data Matrix - BMI")
+
+```
+
+##### Smoking Status
+
+```{r checking for associations between missing and observed data part 1 smoking}
+explanatory <- c("smoking_status", "bmi","gender","hypertension_yn")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed data part 2 smoking}
+explanatory <- c("smoking_status","work_type","residence_type","heart_disease_yn", "age")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+Looking at the 2 above plots, the following can be seen:
+
+-   There is more missingness for the smoking_status variable in those
+    patients who do not have hypertension than those who do.
+
+-   There is significant difference in smoking_status missingness across
+    'Work Type'.
+
+-   Given the above, we can conclude that the smoking_status variable
+    missingness is also MAR.
+
+The relevant variables that have an association with missingness in
+smoking_status are selected for a single missing pairs plot below.
+
+```{r generating a missing pairs plot of associated variables}
+
+explanatory <- c("smoking_status","hypertension_yn","work_type")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill",title = "Missing Data Matrix - smoking_status")
+
+
+```
+
+```{r generating necessary factor variables}
+
+#gender#
+stroke_data$gender <- as.factor(stroke_data$gender)
+
+summary(stroke_data$gender)
+
+#ever_married#
+
+stroke_data$ever_married <- as.factor(stroke_data$ever_married)
+
+summary(stroke_data$ever_married)
+
+#work_type#
+stroke_data$work_type <- as.factor(stroke_data$work_type)
+
+summary(stroke_data$work_type)
+
+#residence_type#
+stroke_data$residence_type <- as.factor(stroke_data$residence_type)
+
+summary(stroke_data$residence_type)
+
+#smoking_status#
+stroke_data$smoking_status <- as.factor(stroke_data$smoking_status)
+
+summary(stroke_data$smoking_status)
+
+```
+
+In the gender and work_type variables there are factor levels with
+minuscule values - 'Other' in gender with 1 and 'Never_worked' in
+work_type with 5. These numbers are extremely small and likely to
+disturb further analysis so I'll make them NA so as to not lose the
+patients but not have the awkward category either.
+
+```{r making nas from and dropping factor levels with too little in them}
+
+stroke_data$gender[stroke_data$gender == "Other"] <- NA
+
+stroke_data$work_type[stroke_data$work_type == "Never_worked"] <- NA
+
+stroke_data$gender <- droplevels(stroke_data$gender)
+
+stroke_data$work_type <- droplevels(stroke_data$work_type)
+
+
+summary(stroke_data$gender)
+
+summary(stroke_data$work_type)
+
+```
+
+#### Missingness in the training Stroke dataset
+
+To avoid data leakage, imputation shall have to be done on the
+respective stroke training and testing datasets rather than the whole
+'stroke_data' dataframe. Data leakage happens when information from the
+test set influences the training process, leading to overly optimistic
+performance estimates.If imputation happens before splitting, the
+imputer learns from the entire dataset, including the test set, which
+can introduce bias.
+
+This ensures that the test set remains unseen during training,
+preserving the integrity of model evaluation. To be pedantic, the above plots 
+code visualising missingness for all the dataframe and for the variables 
+showing missingness is run again for training data in this section. Testing data
+missingness and subsequent MICE is covered in the next section. 
+
+
+```{r missing values plot for training data}
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","age_category")
+dependent <- "stroke_yn"
+
+ stroke_training %>% 
+  missing_plot(dependent, explanatory, title = "Missingness for Training Data")
+ 
+```
+
+
+```{r looking for patterns of missingness in the training data}
+
+stroke_training %>% 
+  missing_pattern(dependent, explanatory)
+
+```
+
+
+##### BMI
+
+```{r checking for associations between missing and observed training data part 1 bmi}
+explanatory <- c("bmi","gender","hypertension_yn","ever_married")
+dependent <- "stroke_yn"
+
+stroke_training  %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed training data part 2 bmi}
+explanatory <- c("bmi","work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+
+```
+
+```{r checking for associations between missing and observed training data part 3 bmi}
+explanatory <- c("bmi","heart_disease_yn","age")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+
+The above 3 plots for the stroke training data have the same patterns as for the
+whole 'stroke_data' dataset:
+
+-   More missingness for the BMI variable in those patients who have stroke than
+    those who do not.
+
+-   Slightly more missingness in those with hypertension than those patients 
+    without it.
+
+-   In those patients with heart disease and on average older patients ,
+    there is also more BMI missingness.
+
+-   MAR for stroke_training.
+
+Again, the relevant variables that have an association with missingness in bmi
+are selected for a single missing pairs plot.
+
+
+```{r generating a missing pairs plot of associated variables strokeyn heartdisease hypertension age in training data}
+
+explanatory <- c("bmi","heart_disease_yn","hypertension_yn","age")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill", title = "Missing Data Matrix - BMI")
+
+```
+
+##### Smoking Status
+
+```{r checking for associations between missing and observed data part 1 smoking in training data}
+explanatory <- c("smoking_status", "bmi","gender","hypertension_yn")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed data part 2 smoking in training data}
+explanatory <- c("smoking_status","work_type","residence_type","heart_disease_yn", "age")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+
+Looking at the 2 above plots, we can observe the following for the training data:
+
+    
+-   There is more missingness for the smoking_status variable in those
+    patients who don't have hypertension than those who do.
+
+-   There is significant difference in smoking_status missingness across
+    'Work Type'.
+
+-   Given the above, we can conclude that the smoking_status variable
+    missingness is also MAR.
+
+A single missing pairs plot below is made of the most relevant variables.
+
+
+```{r generating a missing pairs plot of associated variables in training data smoking status}
+
+explanatory <- c("smoking_status","hypertension_yn","work_type")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill",title = "Missing Data Matrix - smoking_status")
+
+
+```
+
+
+#### MICE on training data MAR BMI & Smoking Status
+
+Multivariate Imputation by Chained Equations (mice) is "*...the process
+of filling in missing data using a best-estimate from all the other data
+that exists.*" (Section 11.8.1 of the HealthyR book)
+
+If missingness in BMI is predicted strongly by stroke outcome (and other
+observed variables), and the values of the missing data are random, then
+we can impute (best-guess) the missing BMI values using those variables.
+
+"*Imputation is not usually appropriate for the explanatory variable of
+interest or the outcome variable, although these can be used to impute
+other variables. In both cases, the hypothesis is that there is a
+meaningful association with other variables in the dataset, therefore it
+doesn’t make sense to use these variables to impute them.*"
+
+The multiple imputation process is as follows:
+
+-   **Impute** missing data *m* times, resulting in *m* complete
+    datasets.
+
+-   **Diagnose** the quality of the impute values.
+
+-   **Analyse** each completed dataset.
+
+-   **Pool** the results of the reported analyses.
+
+
+#### Impute
+
+```{r choosing variables to be imputed and be used in imputation }
+
+explanatory <- c("id","bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+#Choosing variables to not be imputed but still used by the mice function# 
+stroke_training %>% 
+  select(dependent, explanatory) %>% 
+  missing_predictorMatrix(
+    drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","stroke_yn","id"),
+    drop_from_imputer = c("gender", "ever_married", "residence_type", "id")
+  ) -> predM
+
+```
+
+```{r make 10 imputed datasets and run our logistic regression analysis on each set }
+fits <- stroke_training %>% 
+  select(dependent, explanatory) %>% 
+  
+  # Run imputation with 10 imputed sets
+  mice(m = 10, predictorMatrix = predM) %>% 
+  
+  # Run logistic regression on each imputed set
+  with(glm(formula(ff_formula(dependent, explanatory)), 
+           family="binomial"))
+```
+
+
+#### Diagnose
+
+```{r extracting aics}
+# Examples of extracting metrics from fits and taking the mean
+## AICs
+fits %>% 
+  getfit() %>% 
+  purrr::map(AIC) %>%
+  unlist() %>% 
+  mean()
+```
+
+```{r obtaining the c statistic}
+# C-statistic
+fits %>% 
+  getfit() %>% 
+  purrr::map(~ pROC::roc(.x$y, .x$fitted)$auc) %>% 
+  unlist() %>% 
+  mean()
+```
+
+#### Analyse
+
+```{r pool the results of the model and visualise in an or plot}
+# Pool results
+fits_pool <- fits %>% 
+  pool()
+
+## Can be passed to or_plot
+stroke_training %>% 
+  or_plot(dependent, explanatory, glmfit = fits_pool, table_text_size=4)
+```
+
+#### Pool
+
+```{r summarise log reg models that do not have and have imputed bmi}
+# Summarise and put in table
+fit_imputed <- fits_pool %>%                                  
+  fit2df(estimate_name = "OR (multiple imputation)", exp = TRUE)
+
+# Use finalfit merge methods to create and compare results
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
+
+table_uni_multi <- stroke_training %>% 
+  finalfit(dependent, explanatory, keep_fit_id = TRUE) 
+
+explanatory = c("gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
+
+fit_multi_no_bmi <- stroke_training %>% 
+  glmmulti(dependent, explanatory) %>% 
+  fit2df(estimate_suffix = " (multivariable without BMI)") 
+
+# Combine to final table
+table_imputed <- 
+  table_uni_multi %>% 
+  ff_merge(fit_multi_no_bmi) %>% 
+  ff_merge(fit_imputed, last_merge = TRUE)
+
+table_imputed 
+```
+
+```{r summarise log reg models that do not have and have imputed smoking status}
+# Summarise and put in table
+fit_imputed <- fits_pool %>%                                  
+  fit2df(estimate_name = "OR (multiple imputation)", exp = TRUE)
+
+# Use finalfit merge methods to create and compare results
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
+
+table_uni_multi <- stroke_training %>% 
+  finalfit(dependent, explanatory, keep_fit_id = TRUE) 
+
+explanatory = c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type")
+
+fit_multi_no_smoking_status <- stroke_training %>% 
+  glmmulti(dependent, explanatory) %>% 
+  fit2df(estimate_suffix = " (multivariable without Smoking Status)") 
+
+# Combine to final table
+table_imputed <- 
+  table_uni_multi %>% 
+  ff_merge(fit_multi_no_smoking_status) %>% 
+  ff_merge(fit_imputed, last_merge = TRUE)
+
+table_imputed 
+```
+
+
+#### Generating Data & Adding Imputed Values to stroke_training 
+
+```{r doing mice again to save and extract the data}
+explanatory <- c("id","bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  select(dependent, explanatory) %>% 
+  missing_predictorMatrix(
+  drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","stroke_yn","id"),
+    drop_from_imputer = c("gender","ever_married","residence_type","id")
+  ) -> predM
+
+fits <- stroke_training %>%
+select(dependent, explanatory) %>%
+mice(m = 10, predictorMatrix = predM)
+
+
+completedData <- complete(fits, action = 1)
+```
+
+
+```{r scatterplot of original and imputed data bmi vs age}
+#scatter plot of original and imputed data with the magenta points being the imputed data points and the blue points being the observed values#
+
+xyplot(fits,bmi ~ age,pch=18,cex=1)
+
+```
+
+```{r density plot of observed and imputed values for smoking status}
+# Convert your factor variable to a factor with appropriate levels
+fits$data$smoking_status <- factor(fits$data$smoking_status)
+
+# Now, create the density plot again with factor levels on the x-axis
+densityplot(fits, 
+            ~ smoking_status,                     # Factor variable with levels
+            main = "Density of Observed and Imputed Values for Smoking Status",
+            xlab = "Smoking Status",               # Custom x-axis label
+            scales = list(x = list(at = 1:length(levels(fits$data$smoking_status)), 
+                                   labels = levels(fits$data$smoking_status))))
+```
+
+The above is a scatter plot of original and imputed data with the magenta points 
+being the imputed data points and the blue points being the observed values. 
+The matching shape is a good verification of the imputed values indeed being 
+plausible.
+
+```{r density plot of observed and imputed values for bmi}
+densityplot(fits, 
+            ~ bmi,                     # Factor variable with levels
+            main = "Density of Observed and Imputed Values for BMI",
+            xlab = "BMI")
+```
+
+The density of the imputed data for each imputed dataset is magenta and
+the density of the observed data is blue. Again, we expect the
+distributions to be similar.
+
+```{r extracting id and bmi and limiting to just ids wo valid bmi}
+
+ids_wo_bmi <- stroke_training %>% filter(is.na(bmi))
+
+ids_wo_bmi <- ids_wo_bmi$id
+
+imputed_bmi_values <- completedData %>% select(id, bmi)
+
+imputed_bmi_values <- imputed_bmi_values %>% filter(id %in% ids_wo_bmi)
+```
+
+```{r adding imputed bmi values back to stroke data df}
+
+stroke_training <- stroke_training %>%
+  left_join(imputed_bmi_values, by = "id", suffix = c("", ".new")) %>%
+  mutate(bmi = coalesce(bmi, bmi.new)) %>%
+  select(-bmi.new)
+```
+
+```{r extracting id and smoking status and limiting to just ids wo valid smoking status}
+
+ids_wo_smoking_status <- stroke_training %>% filter(is.na(smoking_status))
+
+ids_wo_smoking_status  <- ids_wo_smoking_status$id
+
+imputed_smoking_status_values <- completedData %>% select(id, smoking_status)
+
+imputed_smoking_status_values <- imputed_smoking_status_values %>% filter(id %in% ids_wo_smoking_status)
+```
+
+```{r adding imputed smoking_status values back to stroke data df}
+
+stroke_training <- stroke_training %>%
+  left_join(imputed_smoking_status_values, by = "id", suffix = c("", ".new")) %>%
+  mutate(smoking_status = coalesce(smoking_status, smoking_status.new)) %>%
+  select(-smoking_status.new)
+```
+
+```{r redoing the bmi category variable based on imputed data}
+
+stroke_training <- stroke_training %>% mutate(
+  
+  # Create BMI categories
+  bmi_category = case_when(
+    bmi < 18.5 ~ "Underweight",
+    bmi >= 18.5 & bmi <= 24.9 ~ "Normal weight",
+    bmi >= 25 & bmi <= 29.9 ~ "Overweight",
+    bmi >= 30 ~ "Obese",
+    TRUE ~ NA_character_
+  ) %>% factor(levels = c("Normal weight", "Underweight", "Overweight", "Obese"))
+  
+)
+  
+```
+
+```{r double check missingness has been sorted}
+
+stroke_training <- stroke_training %>%
+mutate(across(where(is.factor),droplevels))
+
+ff_glimpse(stroke_training)
+
+```
+
+
+
+```{r missing values plot for training data}
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","age_category")
+dependent <- "stroke_yn"
+
+ stroke_training %>% 
+  missing_plot(dependent, explanatory, title = "Missingness for Training Data")
+ 
+```
+
+
+```{r looking for patterns of missingness in the training data}
+
+stroke_training %>% 
+  missing_pattern(dependent, explanatory)
+
+```
+
+
+##### BMI
+
+```{r checking for associations between missing and observed training data part 1 bmi}
+explanatory <- c("bmi","gender","hypertension_yn","ever_married")
+dependent <- "stroke_yn"
+
+stroke_training  %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed training data part 2 bmi}
+explanatory <- c("bmi","work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+
+```
+
+```{r checking for associations between missing and observed training data part 3 bmi}
+explanatory <- c("bmi","heart_disease_yn","age")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+
+The above 3 plots for the stroke training data have the same patterns as for the
+whole 'stroke_data' dataset:
+
+-   More missingness for the BMI variable in those patients who have stroke than
+    those who do not.
+
+-   Slightly more missingness in those with hypertension than those patients 
+    without it.
+
+-   In those patients with heart disease and on average older patients ,
+    there is also more BMI missingness.
+
+-   MAR for stroke_training.
+
+Again, the relevant variables that have an association with missingness in bmi
+are selected for a single missing pairs plot.
+
+
+```{r generating a missing pairs plot of associated variables strokeyn heartdisease hypertension age in training data}
+
+explanatory <- c("bmi","heart_disease_yn","hypertension_yn","age")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill", title = "Missing Data Matrix - BMI")
+
+```
+
+##### Smoking Status
+
+```{r checking for associations between missing and observed data part 1 smoking in training data}
+explanatory <- c("smoking_status", "bmi","gender","hypertension_yn")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed data part 2 smoking in training data}
+explanatory <- c("smoking_status","work_type","residence_type","heart_disease_yn", "age")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+
+Looking at the 2 above plots, we can observe the following for the training data:
+
+    
+-   There is more missingness for the smoking_status variable in those
+    patients who don't have hypertension than those who do.
+
+-   There is significant difference in smoking_status missingness across
+    'Work Type'.
+
+-   Given the above, we can conclude that the smoking_status variable
+    missingness is also MAR.
+
+A single missing pairs plot below is made of the most relevant variables.
+
+
+```{r generating a missing pairs plot of associated variables in training data smoking status}
+
+explanatory <- c("smoking_status","hypertension_yn","work_type")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill",title = "Missing Data Matrix - smoking_status")
+
+
+```
+
+
+
+
+
+#### Missingness in the testing Stroke dataset
+
+
+```{r missing values plot for testing data}
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","age_category")
+dependent <- "stroke_yn"
+
+ stroke_testing %>% 
+  missing_plot(dependent, explanatory, title = "Missingness for testing Data")
+ 
+```
+
+
+```{r looking for patterns of missingness in the testing data}
+
+stroke_testing %>% 
+  missing_pattern(dependent, explanatory)
+
+```
+
+
+##### BMI
+
+```{r checking for associations between missing and observed testing data part 1 bmi}
+explanatory <- c("bmi","gender","hypertension_yn","ever_married")
+dependent <- "stroke_yn"
+
+stroke_testing  %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed testing data part 2 bmi}
+explanatory <- c("bmi","work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_testing %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+
+```
+
+```{r checking for associations between missing and observed testing data part 3 bmi}
+explanatory <- c("bmi","heart_disease_yn","age")
+dependent <- "stroke_yn"
+
+stroke_testing %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+
+The above 3 plots for the stroke testing data have the same patterns as for the
+whole 'stroke_data' dataset:
+
+-   More missingness for the BMI variable in those patients who have stroke than
+    those who do not.
+
+-   Slightly more missingness in those with hypertension than those patients 
+    without it.
+
+-   In those patients with heart disease and on average older patients ,
+    there is also more BMI missingness.
+
+-   MAR for stroke_testing.
+
+Once more, the relevant variables that have an association with missingness in BMI
+are selected for a single missing pairs plot.
+
+
+```{r generating a missing pairs plot of associated variables strokeyn heartdisease hypertension age in testing data}
+
+explanatory <- c("bmi","heart_disease_yn","hypertension_yn","age")
+dependent <- "stroke_yn"
+
+stroke_testing %>% 
+  missing_pairs(dependent, explanatory, position = "fill", title = "Missing Data Matrix - BMI")
+
+```
+
+##### Smoking Status
+
+```{r checking for associations between missing and observed data part 1 smoking in testing data}
+explanatory <- c("smoking_status", "bmi","gender","hypertension_yn")
+dependent <- "stroke_yn"
+
+stroke_testing %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed data part 2 smoking in testing data}
+explanatory <- c("smoking_status","work_type","residence_type","heart_disease_yn", "age")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+
+Looking at the 2 above plots, we can observe the following for the testing data:
+
+    
+-   There is more missingness for the smoking_status variable in those
+    patients who don't have hypertension than those who do.
+
+-   There is significant difference in smoking_status missingness across
+    'Work Type'.
+
+-   Given the above, we can conclude that the smoking_status variable
+    missingness is also MAR.
+
+A single missing pairs plot below is made of the most relevant variables.
+
+
+```{r generating a missing pairs plot of associated variables in testing data smoking status}
+
+explanatory <- c("smoking_status","hypertension_yn","work_type")
+dependent <- "stroke_yn"
+
+stroke_testing %>% 
+  missing_pairs(dependent, explanatory, position = "fill",title = "Missing Data Matrix - smoking_status")
+
+
+```
+
+
+
+#### MICE on testing data MAR BMI & Smoking Status
+
+```{r choosing variables to be imputed and be used in imputation }
+
+explanatory <- c("id","bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+#Choosing variables to not be imputed but still used by the mice function# 
+stroke_testing %>% 
+  select(dependent, explanatory) %>% 
+  missing_predictorMatrix(
+    drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","stroke_yn","id"),
+    drop_from_imputer = c("gender", "ever_married", "residence_type", "id")
+  ) -> predM
+
+```
+
+```{r make 10 imputed datasets and run our logistic regression analysis on each set }
+fits <- stroke_testing %>% 
+  select(dependent, explanatory) %>% 
+  
+  # Run imputation with 10 imputed sets
+  mice(m = 10, predictorMatrix = predM) %>% 
+  
+  # Run logistic regression on each imputed set
+  with(glm(formula(ff_formula(dependent, explanatory)), 
+           family="binomial"))
+```
+
+
+#### Diagnose
+
+```{r extracting aics}
+# Examples of extracting metrics from fits and taking the mean
+## AICs
+fits %>% 
+  getfit() %>% 
+  purrr::map(AIC) %>%
+  unlist() %>% 
+  mean()
+```
+
+```{r obtaining the c statistic}
+# C-statistic
+fits %>% 
+  getfit() %>% 
+  purrr::map(~ pROC::roc(.x$y, .x$fitted)$auc) %>% 
+  unlist() %>% 
+  mean()
+```
+
+#### Analyse
+
+```{r pool the results of the model and visualise in an or plot}
+# Pool results
+fits_pool <- fits %>% 
+  pool()
+
+## Can be passed to or_plot
+stroke_testing %>% 
+  or_plot(dependent, explanatory, glmfit = fits_pool, table_text_size=4)
+```
+
+#### Pool
+
+```{r summarise log reg models that do not have and have imputed bmi}
+# Summarise and put in table
+fit_imputed <- fits_pool %>%                                  
+  fit2df(estimate_name = "OR (multiple imputation)", exp = TRUE)
+
+# Use finalfit merge methods to create and compare results
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
+
+table_uni_multi <- stroke_testing %>% 
+  finalfit(dependent, explanatory, keep_fit_id = TRUE) 
+
+explanatory = c("gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
+
+fit_multi_no_bmi <- stroke_testing %>% 
+  glmmulti(dependent, explanatory) %>% 
+  fit2df(estimate_suffix = " (multivariable without BMI)") 
+
+# Combine to final table
+table_imputed <- 
+  table_uni_multi %>% 
+  ff_merge(fit_multi_no_bmi) %>% 
+  ff_merge(fit_imputed, last_merge = TRUE)
+
+table_imputed 
+```
+
+```{r summarise log reg models that do not have and have imputed smoking status}
+# Summarise and put in table
+fit_imputed <- fits_pool %>%                                  
+  fit2df(estimate_name = "OR (multiple imputation)", exp = TRUE)
+
+# Use finalfit merge methods to create and compare results
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
+
+table_uni_multi <- stroke_testing %>% 
+  finalfit(dependent, explanatory, keep_fit_id = TRUE) 
+
+explanatory = c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type")
+
+fit_multi_no_smoking_status <- stroke_testing %>% 
+  glmmulti(dependent, explanatory) %>% 
+  fit2df(estimate_suffix = " (multivariable without Smoking Status)") 
+
+# Combine to final table
+table_imputed <- 
+  table_uni_multi %>% 
+  ff_merge(fit_multi_no_smoking_status) %>% 
+  ff_merge(fit_imputed, last_merge = TRUE)
+
+table_imputed 
+```
+
+
+#### Generating Data & Adding Imputed Values to stroke_testing 
+
+```{r doing mice again to save and extract the data}
+
+explanatory <- c("id","bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_testing %>% 
+  select(dependent, explanatory) %>% 
+  missing_predictorMatrix(
+  drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","stroke_yn","id"),
+    drop_from_imputer = c("gender","ever_married","residence_type","id")
+  ) -> predM
+
+fits <- stroke_testing %>%
+select(dependent, explanatory) %>%
+mice(m = 10, predictorMatrix = predM)
+
+
+completedData <- complete(fits, action = 1)
+
+```
+
+
+```{r scatterplot of original and imputed data bmi vs age}
+#scatter plot of original and imputed data with the magenta points being the imputed data points and the blue points being the observed values#
+
+xyplot(fits,bmi ~ age,pch=18,cex=1)
+
+```
+
+```{r density plot of observed and imputed values for smoking status}
+# Convert your factor variable to a factor with appropriate levels
+fits$data$smoking_status <- factor(fits$data$smoking_status)
+
+# Now, create the density plot again with factor levels on the x-axis
+densityplot(fits, 
+            ~ smoking_status,                     # Factor variable with levels
+            main = "Density of Observed and Imputed Values for Smoking Status",
+            xlab = "Smoking Status",               # Custom x-axis label
+            scales = list(x = list(at = 1:length(levels(fits$data$smoking_status)), 
+                                   labels = levels(fits$data$smoking_status))))
+```
+
+The above is a scatter plot of original and imputed data with the magenta points 
+being the imputed data points and the blue points being the observed values. 
+The matching shape is a good verification of the imputed values indeed being 
+plausible.
+
+```{r density plot of observed and imputed values for bmi}
+densityplot(fits, 
+            ~ bmi,                     # Factor variable with levels
+            main = "Density of Observed and Imputed Values for BMI",
+            xlab = "BMI")
+```
+
+The density of the imputed data for each imputed dataset is magenta and
+the density of the observed data is blue. Again, we expect the
+distributions to be similar.
+
+```{r extracting id and bmi and limiting to just ids wo valid bmi}
+
+ids_wo_bmi <- stroke_testing %>% filter(is.na(bmi))
+
+ids_wo_bmi <- ids_wo_bmi$id
+
+imputed_bmi_values <- completedData %>% select(id, bmi)
+
+imputed_bmi_values <- imputed_bmi_values %>% filter(id %in% ids_wo_bmi)
+
+```
+
+```{r adding imputed bmi values back to stroke data df}
+
+stroke_testing <- stroke_testing %>%
+  left_join(imputed_bmi_values, by = "id", suffix = c("", ".new")) %>%
+  mutate(bmi = coalesce(bmi, bmi.new)) %>%
+  select(-bmi.new)
+
+```
+
+```{r extracting id and smoking status and limiting to just ids wo valid smoking status}
+
+ids_wo_smoking_status <- stroke_testing %>% filter(is.na(smoking_status))
+
+ids_wo_smoking_status  <- ids_wo_smoking_status$id
+
+imputed_smoking_status_values <- completedData %>% select(id, smoking_status)
+
+imputed_smoking_status_values <- imputed_smoking_status_values %>% filter(id %in% ids_wo_smoking_status)
+
+```
+
+```{r adding imputed smoking_status values back to stroke data df}
+
+stroke_testing <- stroke_testing %>%
+  left_join(imputed_smoking_status_values, by = "id", suffix = c("", ".new")) %>%
+  mutate(smoking_status = coalesce(smoking_status, smoking_status.new)) %>%
+  select(-smoking_status.new)
+
+```
+
+```{r redoing the bmi category variable based on imputed data}
+
+stroke_testing <- stroke_testing %>% mutate(
+  
+  # Create BMI categories
+  bmi_category = case_when(
+    bmi < 18.5 ~ "Underweight",
+    bmi >= 18.5 & bmi <= 24.9 ~ "Normal weight",
+    bmi >= 25 & bmi <= 29.9 ~ "Overweight",
+    bmi >= 30 ~ "Obese",
+    TRUE ~ NA_character_
+  ) %>% factor(levels = c("Normal weight", "Underweight", "Overweight", "Obese"))
+  
+)
+  
+```
+
+```{r double check missingness has been sorted in testing data}
+
+stroke_testing <- stroke_testing %>%
+mutate(across(where(is.factor),droplevels))
+
+ff_glimpse(stroke_testing)
+
+```
+
+
+```{r missing values plot for testing data}
+
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","age_category")
+dependent <- "stroke_yn"
+
+ stroke_testing %>% 
+  missing_plot(dependent, explanatory, title = "Missingness for testing Data")
+ 
+```
+
+
+```{r looking for patterns of missingness in the testing data}
+
+stroke_testing %>% 
+  missing_pattern(dependent, explanatory)
+
+```
+
+```{r recombining the training and testing data for a full df for descriptives}
+
+stroke_data <- rbind(stroke_training, stroke_testing)
+
+
+```
+
+
+```{r missing values plot for stroke data df}
+
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","age_category")
+dependent <- "stroke_yn"
+
+ stroke_data %>% 
+  missing_plot(dependent, explanatory, title = "Missingness for stoke_data df")
+ 
+```
+
+
+```{r looking for patterns of missingness in the data data}
+
+stroke_data %>% 
+  missing_pattern(dependent, explanatory)
+
+```
+
+
+```{r generating a Stroke Data file}
+
+write_csv(stroke_data, "stroke_data.csv")
+
+```
+
+
+
