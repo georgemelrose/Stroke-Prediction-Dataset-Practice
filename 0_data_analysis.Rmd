@@ -2897,6 +2897,7 @@ head(stroke_testing_numeric)
 ```
 
 ```{r Fitting KNN Model to training dataset}
+
 knn_model <- knn(
   train = stroke_training_numeric,
   test = stroke_testing_numeric,
@@ -2904,16 +2905,21 @@ knn_model <- knn(
   k = 19,
   prob = TRUE
 )
+
 head(knn_model)
+
 ```
 
 ```{r cm for testing data}
+
 # Confusion Matrix
 cm <- table(stroke_testing_numeric$stroke_yn, knn_model)
 cm
+
 ```
 
 ```{r getting metrics for KNN model}
+
 # Confusion Matrix
 cm <- table(stroke_testing_numeric$stroke_yn, knn_model)
 print(cm)
@@ -2941,9 +2947,11 @@ cat("Recall (No, 0):", recall_no, "\n")
 # Calculate F1 Score for 'No' (0) class
 f1_no <- 2 * (precision_no * recall_no) / (precision_no + recall_no)
 cat("F1 Score (No, 0):", f1_no, "\n")
+
 ```
 
 ```{r auroc curve for knn model}
+
 attributes(knn_model)$prob
 
 roc(stroke_testing$stroke_yn, attributes(knn_model)$prob)
@@ -2951,6 +2959,7 @@ roc(stroke_testing$stroke_yn, attributes(knn_model)$prob)
 plot(roc(stroke_testing$stroke_yn, attributes(knn_model)$prob),
      print.thres = T,
      print.auc=T)
+
 ```
 
 ```{r saving knn model to a .rds file}
@@ -2959,85 +2968,6 @@ saveRDS(knn_model, "knn_model.rds")
 
 ```
 
-### Evaluating and Selecting Models
-
-```{r getting metrics for the RF model}
-# Random Forest Model
-
-rf_training_results <- rf_training_results %>%
-  mutate(truth = as.numeric(truth), .pred_class = as.numeric(.pred_class))
-
-# to calculate accuracy
-Metrics::accuracy(rf_training_results$.pred_class, rf_training_results$truth)
-
-# to calculate recall
-Metrics::recall(rf_training_results$.pred_class, rf_training_results$truth)
-
-# to calculate precision
-Metrics::precision(rf_training_results$.pred_class, rf_training_results$truth)
-
-# to calculate f1_score
-Metrics::f1(rf_training_results$.pred_class, rf_training_results$truth)
-
-# to calculate auc
-Metrics::auc(rf_training_results$.pred_class, rf_training_results$truth)
-
-# to calculate rmse
-Metrics::rmse(rf_training_results$.pred_class, rf_training_results$truth)
-```
-
-```{r getting metrics for the NB model}
-# Naive Bayes Classification
-
-stroke_training$stroke_yn <- as.numeric(stroke_training$stroke_yn)
-stroke_training$stroke_yn <- stroke_training$stroke_yn - 1
-
-p1 <- as.numeric(p1)
-p1 <- p1 - 1
-
-# to calculate accuracy
-Metrics::accuracy(p1, stroke_training$stroke_yn)
-
-# to calculate recall
-Metrics::recall(p1, stroke_training$stroke_yn)
-
-# to calculate precision
-Metrics::precision(p1, stroke_training$stroke_yn)
-
-# to calculate f1_score
-Metrics::f1(p1, stroke_training$stroke_yn)
-
-# to calculate auc
-Metrics::auc(p1, stroke_training$stroke_yn)
-
-# to calculate rmse
-Metrics::rmse(p1, stroke_training$stroke_yn)
-```
-
-```{r getting metrics for the KNN model}
-# K-Nearest Neighbor (KNN) classification (test results)
-# KNN is a so called 'lazy learning' algorithm so doesn't compute the training
-# results separately 
-
-
-# to calculate accuracy
-Metrics::accuracy(knn_model, stroke_testing_numeric$stroke_yn)
-
-# to calculate recall
-Metrics::recall(knn_model, stroke_testing_numeric$stroke_yn)
-
-# to calculate precision
-Metrics::precision(knn_model, stroke_testing_numeric$stroke_yn)
-
-# to calculate f1_score
-Metrics::f1(knn_model, stroke_testing_numeric$stroke_yn)
-
-# to calculate auc
-Metrics::auc(knn_model, stroke_testing_numeric$stroke_yn)
-
-# to calculate rmse
-Metrics::rmse(knn_model, stroke_testing_numeric$stroke_yn)
-```
 
 ## Prediction Modelling Part 2 - SMOTE-Balanced Classes (8.5% Stroke) {.tabset .tabset-fade .tabset-pills}
 
@@ -3063,10 +2993,13 @@ stroke_data$work_type[is.na(stroke_data$work_type)] <- "Unknown"
 ```
 
 ```{r checking the missingness of the stroke data df}
-ff_glimpse(stroke_data)
+
+ff_glimpse(stroke_training)
+
 ```
 
 ```{r SMOTE to get stroke yes rate to 8.5%}
+
 # Apply SMOTE
 # stroke_data_balanced <- SMOTE(stroke_yn ~ ., data = stroke_data)  
 # 
@@ -3078,7 +3011,7 @@ ff_glimpse(stroke_data)
 
 # Convert categorical columns to numeric (e.g., using one-hot encoding)
 # If you have factor columns, convert them into dummy variables using model.matrix
-X <- stroke_data[, !names(stroke_data) %in% "stroke"]  # Exclude target variable
+X <- stroke_training[, !names(stroke_training) %in% "stroke"]  # Exclude target variable
 
 X <- X %>% select(-stroke_yn)
 
@@ -3101,7 +3034,7 @@ X <- data.frame(lapply(X, function(x) {
 str(X)
 
 # Prepare target variable
-target <- stroke_data$stroke  # The target variable (should already be numeric or a factor)
+target <- stroke_training$stroke  # The target variable (should already be numeric or a factor)
 
 # Ensure target is a factor or numeric
 target <- as.numeric(target)
@@ -3171,11 +3104,13 @@ post_smote_stroke_ids <- as.integer(post_smote_stroke_ids)
 
 #Using all() check the original IDs are still present#
 all(original_stroke_ids %in% post_smote_stroke_ids)
+
 ```
 
 ```{r checking the data}
 
 ff_glimpse(balanced_data)
+
 ```
 
 ```{r}
@@ -3198,6 +3133,7 @@ stroke_data_updated <- stroke_data %>%
 
 # Check the result
 table(stroke_data_updated$stroke_yn)
+
 ```
 
 ## Building a Shiny App
