@@ -1,0 +1,172 @@
+---
+title: "2 - Prediction Modelling"
+author: "George Melrose"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+rm(list = ls())
+
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
+
+pacman::p_load(tidyverse,knitr,kableExtra,finalfit,lubridate,data.table,
+               janitor,flextable,rmdHelpers, ggrepel,survminer,survival,
+               scales,RColorBrewer,GGally,DT,gtsummary,cardx,
+               ggsurvfit,patchwork,rsample)
+
+```
+
+
+```{r loading in data}
+
+stroke_data <- read_csv("stroke_data.csv")
+
+stroke_training <- read_csv("stroke_training.csv")
+
+stroke_testing <- read_csv("stroke_testing.csv")
+
+```
+
+```{r looking at the data}
+
+str(stroke_data)
+
+str(stroke_training)
+
+str(stroke_testing)
+
+
+```
+
+
+## Prediction Modelling Part 1 {.tabset .tabset-fade .tabset-pills}
+
+### Preprocessing data
+
+```{r removing unecessary variables}
+
+stroke_training <- stroke_training %>% select(-id, -hypertension_yn, -heart_disease_yn,
+                                              -age_category, -bmi_category,-stroke,
+                                              -follow_up_time_days,-follow_up_years,
+                                              -status,-gender,-residence_type)
+
+stroke_testing <- stroke_testing %>% select(-id, -hypertension_yn, -heart_disease_yn,
+                                              -age_category, -bmi_category,-stroke,
+                                            -follow_up_time_days,-follow_up_years,
+                                              -status,-gender,-residence_type)
+```
+
+### Random Forest
+
+```{r Generating and training and RF model on training data}
+# Setting a seed to ensure reproducibility of results
+set.seed(123)
+
+# Create a cross-validation object for 5-fold cross-validation
+stroke_cv <- vfold_cv(stroke_training)
+
+# Define the Random Forest model with tuning parameters (mtry and trees)
+rf_model <-
+  rand_forest() %>%
+  set_args(mtry = tune(), trees = tune()) %>%  # Tuning mtry (number of predictors) and trees (number of trees)
+  set_engine("ranger", importance = "impurity") %>%  # Use ranger engine and calculate importance by impurity
+  set_mode("classification")  # Set the model for classification (binary outcome: stroke or no stroke)
+
+# Specify the recipe for preprocessing (outcome ~ predictors)
+stroke_recipe <-
+  recipe(stroke_yn ~ .,  # Define the formula: outcome is 'stroke_yn', all other columns are predictors
+    data = stroke_training
+  )
+
+# Combine the recipe and model into a workflow
+rf_workflow <- workflow() %>%
+  add_recipe(stroke_recipe) %>%  # Add preprocessing recipe
+  add_model(rf_model)  # Add the random forest model
+
+# Create a grid for hyperparameter tuning: mtry and trees values to explore
+rf_grid <- expand.grid(mtry = c(3, 4, 5), trees = c(500, 1000))
+
+# Set the seed again for reproducibility and perform hyperparameter tuning
+set.seed(125)
+rf_tune_results <- rf_workflow %>%
+  tune_grid(  # Perform grid search cross-validation
+    resamples = stroke_cv,  # Use the 5-fold cross-validation splits created above
+    grid = rf_grid  # Use the parameter grid defined above
+  )
+
+# Collect the performance metrics from the tuning results (e.g., accuracy)
+rf_tune_results %>%
+  collect_metrics()
+
+# Select the best model based on accuracy (higher accuracy is better)
+rf_model_final <- rf_tune_results %>%
+  select_best(metric = "accuracy")  # Select the model with the best accuracy
+
+# Show the best model parameters based on the tuning results
+rf_model_final
+
+# Finalize the workflow with the best model (chosen based on accuracy)
+rf_workflow <- rf_workflow %>%
+  finalize_workflow(rf_model_final)  # Apply the best model to the workflow
+
+# Fit the finalized workflow on the entire training data
+rf_fit <- rf_workflow %>%
+  fit(data = stroke_training)  # Fit the model to the full training data
+
+# Predict the outcomes on the training data
+rf_training_results <- rf_fit %>%
+  predict(new_data = stroke_training) %>%
+  mutate(truth = stroke_training$stroke_yn)  # Add true outcome values (truth) to the predictions
+
+# View the first few rows of the training results
+head(rf_training_results)
+
+# Evaluate the model using R-squared (for classification, it is a pseudo R-squared)
+rsq_rf <- rf_training_results %>%
+  mutate(truth = as.numeric(truth), .pred_class = as.numeric(.pred_class)) %>%
+  rsq(  # Compute R-squared (pseudo R-squared)
+    truth = truth,  # Actual outcomes
+    estimate = .pred_class  # Predicted class outcomes
+  )
+
+# Calculate RMSE (Root Mean Squared Error) on predictions
+rmse_rf <- rf_training_results %>%
+  mutate(truth = as.numeric(truth), .pred_class = as.numeric(.pred_class)) %>%
+  yardstick::rmse(  # Compute RMSE
+    truth = truth,  # Actual outcomes
+    estimate = .pred_class  # Predicted class outcomes
+  )
+
+# Output R-squared and RMSE results
+rsq_rf
+rmse_rf
+
+# Count how many predictions fall into each category (True Positives, False Positives, etc.)
+rf_training_results %>% count(.pred_class, truth)  # Confusion matrix: compare predicted vs. actual
+
+```
+
+```{r Random Forest feature importance}
+
+# Extract feature importance from the fitted random forest model
+importances <- rf_fit %>%
+  extract_fit_parsnip() %>%
+  vip::vi()  # Using the 'vip' package to extract feature importance
+
+# Convert the importances into a dataframe
+forest_importances <- data.frame(Feature = importances$Variable,
+                                 Importance = importances$Importance)
+
+# Calculate standard deviation of feature importance (if needed)
+# Using the 'vip' package, we can retrieve the importance standard errors for the features
+std <- importances$SE  # Standard errors of the importance values
+
+# Add standard deviation to the dataframe
+forest_importances$Std <- std
+
+# View the feature importances with standard errors
+head(forest_importances)
+
+```
