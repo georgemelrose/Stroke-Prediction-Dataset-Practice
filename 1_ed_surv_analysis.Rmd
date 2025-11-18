@@ -33,7 +33,7 @@ pacman::p_load(tidyverse,knitr,kableExtra,finalfit,lubridate,data.table,
 
 ```{r loading in data}
 
-stroke_data <- read_csv("stroke_data.csv")
+stroke_data <- readRDS("stroke_data.rds")
 
 ```
 
@@ -1278,3 +1278,4 @@ tab[[2]] %>% knitr::kable()
 
 
 ```
+
