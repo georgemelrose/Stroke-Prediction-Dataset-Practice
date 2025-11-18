@@ -14,18 +14,20 @@ knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
 pacman::p_load(tidyverse,knitr,kableExtra,finalfit,lubridate,data.table,
                janitor,flextable,rmdHelpers, ggrepel,survminer,survival,
                scales,RColorBrewer,GGally,DT,gtsummary,cardx,
-               ggsurvfit,patchwork,rsample)
+               ggsurvfit,patchwork,rsample,parsnip,recipes,workflows,tune,
+               ranger,yardstick,vip,tidymodels,naivebayes,class,Metrics,shiny,
+               shinythemes,pROC,DMwR,smotefamily)
 
 ```
 
 
 ```{r loading in data}
 
-stroke_data <- read_csv("stroke_data.csv")
+stroke_data <- readRDS("stroke_data.rds")
 
-stroke_training <- read_csv("stroke_training.csv")
+stroke_training <- readRDS("stroke_training.rds")
 
-stroke_testing <- read_csv("stroke_testing.csv")
+stroke_testing <- readRDS("stroke_testing.rds")
 
 ```
 
@@ -33,9 +35,9 @@ stroke_testing <- read_csv("stroke_testing.csv")
 
 str(stroke_data)
 
-str(stroke_training)
+ff_glimpse(stroke_training)
 
-str(stroke_testing)
+ff_glimpse(stroke_testing)
 
 
 ```
@@ -50,12 +52,13 @@ str(stroke_testing)
 stroke_training <- stroke_training %>% select(-id, -hypertension_yn, -heart_disease_yn,
                                               -age_category, -bmi_category,-stroke,
                                               -follow_up_time_days,-follow_up_years,
-                                              -status,-gender,-residence_type)
+                                              -status)
 
 stroke_testing <- stroke_testing %>% select(-id, -hypertension_yn, -heart_disease_yn,
                                               -age_category, -bmi_category,-stroke,
                                             -follow_up_time_days,-follow_up_years,
-                                              -status,-gender,-residence_type)
+                                              -status)
+
 ```
 
 ### Random Forest
@@ -168,5 +171,528 @@ forest_importances$Std <- std
 
 # View the feature importances with standard errors
 head(forest_importances)
+
+```
+
+
+```{r testing RF model on testing dataset}
+
+# Predict on the testing dataset
+rf_testing_results <- rf_fit %>%
+  predict(new_data = stroke_testing) %>%  # Generate predictions
+  bind_cols(stroke_testing %>% select(stroke_yn))  # Add the true outcome values for comparison
+
+# View the first few rows of the testing results
+head(rf_testing_results)
+
+# Convert both `truth` and `estimate` to factors with the same levels
+rf_testing_results <- rf_testing_results %>%
+  mutate(
+    stroke_yn = as.factor(stroke_yn),
+    .pred_class = as.factor(.pred_class)
+  )
+
+# Ensure the levels of `truth` and `estimate` match
+levels(rf_testing_results$stroke_yn) <- levels(rf_testing_results$.pred_class)
+
+# Compute confusion matrix
+confusion_matrix <- rf_testing_results %>%
+  conf_mat(truth = stroke_yn, estimate = .pred_class)
+
+# View confusion matrix
+confusion_matrix
+# Calculate other performance metrics
+# Accuracy
+accuracy <- rf_testing_results %>%
+  metrics(truth = stroke_yn, estimate = .pred_class) %>%
+  filter(.metric == "accuracy")
+accuracy
+
+# Precision, Recall, F1 Score
+classification_metrics <- rf_testing_results %>%
+  metrics(truth = stroke_yn, estimate = .pred_class)
+classification_metrics
+
+# ROC AUC (requires probabilities)
+rf_testing_probs <- rf_fit %>%
+  predict(new_data = stroke_testing, type = "prob") %>%
+  bind_cols(stroke_testing %>% select(stroke_yn))
+
+# Convert `stroke_yn` to a factor
+rf_testing_probs <- rf_testing_probs %>%
+  mutate(stroke_yn = as.factor(stroke_yn))
+
+# Check levels to ensure "Yes" and "No" are present
+levels(rf_testing_probs$stroke_yn)
+
+# Compute the ROC AUC
+roc_auc <- rf_testing_probs %>%
+  roc_auc(truth = stroke_yn, .pred_Yes)  # Assuming "Yes" is the positive class
+
+# Display ROC AUC result
+roc_auc
+
+```
+
+
+### Naive Bayes Classification
+
+```{r making an nb model}
+
+nb_model <- naive_bayes(stroke_yn ~ ., data = stroke_training, usekernel = T)
+plot(nb_model)
+
+```
+
+```{r fitting nb model on training data}
+
+# Predict probabilities on the training data
+nb_training_probs <- predict(nb_model, stroke_training, type = "prob")
+
+# Predict classes on the training data
+nb_training_preds <- predict(nb_model, stroke_training)
+
+# Confusion matrix for training data
+(tab2 <- table(Predicted = nb_training_preds, Actual = stroke_training$stroke_yn))
+
+# Calculate training error rate
+training_error_rate <- 1 - sum(diag(tab2)) / sum(tab2)
+training_error_rate
+
+# Evaluate ROC AUC on the training data
+
+
+# Convert training data predictions into a dataframe with actual values and predicted probabilities
+nb_training_results <- cbind(stroke_training, nb_training_probs)
+
+# Ensure stroke_yn is a factor
+nb_training_results <- nb_training_results %>%
+  mutate(stroke_yn = as.factor(stroke_yn))
+
+# Compute ROC AUC
+roc_auc <- nb_training_results %>%
+  roc_auc(truth = stroke_yn,Yes)  # Assuming "Yes" is the positive class
+
+# Display ROC AUC
+roc_auc
+
+```
+
+
+```{r making an object of the nb model on training data}
+
+p1 <- predict(nb_model, stroke_training)
+
+```
+
+```{r confusion matrix for nb model on training data}
+
+(tab1 <- table(p1, stroke_training$stroke_yn))
+
+```
+
+
+```{r accuracy of nb model}
+
+1 - sum(diag(tab1)) / sum(tab1)
+
+```
+
+
+Naives Bayes has an accuracy of 99.9% on the training data.
+
+```{r testing nb on testing data}
+
+# --- Extension to Testing Data ---
+
+# Predict probabilities on the testing data
+nb_testing_probs <- predict(nb_model, stroke_testing, type = "prob")
+
+# Predict classes on the testing data
+nb_testing_preds <- predict(nb_model, stroke_testing)
+
+# Confusion matrix for testing data
+(tab2 <- table(Predicted = nb_testing_preds, Actual = stroke_testing$stroke_yn))
+
+# Calculate testing error rate
+testing_error_rate <- 1 - sum(diag(tab2)) / sum(tab2)
+testing_error_rate
+
+# Evaluate ROC AUC on the testing data
+
+
+# Convert testing data predictions into a dataframe with actual values and predicted probabilities
+nb_testing_results <- cbind(stroke_testing, nb_testing_probs)
+
+# Ensure stroke_yn is a factor
+nb_testing_results <- nb_testing_results %>%
+  mutate(stroke_yn = as.factor(stroke_yn))
+
+# Compute ROC AUC
+roc_auc <- nb_testing_results %>%
+  roc_auc(truth = stroke_yn,Yes)  # Assuming "Yes" is the positive class
+
+# Display ROC AUC
+roc_auc
+
+```
+
+### K-Nearest Neighbor Classfication
+
+```{r ensuring there are no nas before doing knn, echo=FALSE}
+
+ff_glimpse(stroke_training)
+
+ff_glimpse(stroke_testing)
+
+
+```
+
+```{r making categorical variables numeric for knn}
+
+# Convert categorical variables into numeric format (one-hot encoding)
+stroke_training_numeric <- stroke_training %>%
+  # Convert categorical variables into numeric format (1-hot encoding)
+  mutate(
+    #gender = as.numeric(factor(gender)),
+    ever_married = as.numeric(factor(ever_married)),
+    work_type = as.numeric(factor(work_type)),
+    #residence_type = as.numeric(factor(residence_type)),
+    smoking_status = as.numeric(factor(smoking_status)),
+    # Convert stroke_yn to 1 for "Yes" and 0 for "No"
+    stroke_yn = ifelse(stroke_yn == "Yes", 1, 0)
+  )
+
+# Check the transformed data
+head(stroke_training_numeric)
+
+# Convert categorical variables into numeric format (one-hot encoding)
+stroke_testing_numeric <- stroke_testing %>%
+  # Convert categorical variables into numeric format (1-hot encoding)
+  mutate(
+    #gender = as.numeric(factor(gender)),
+    ever_married = as.numeric(factor(ever_married)),
+    work_type = as.numeric(factor(work_type)),
+    #residence_type = as.numeric(factor(residence_type)),
+    smoking_status = as.numeric(factor(smoking_status)),
+    # Convert stroke_yn to 1 for "Yes" and 0 for "No"
+    stroke_yn = ifelse(stroke_yn == "Yes", 1, 0)
+  )
+
+
+# Check the transformed data
+head(stroke_testing_numeric)
+
+```
+
+
+```{r Fitting KNN Model to training dataset}
+
+knn_model <- knn(
+  train = stroke_training_numeric,
+  test = stroke_testing_numeric,
+  cl = stroke_training_numeric$stroke_yn,
+  k = 19,
+  prob = TRUE
+)
+
+head(knn_model)
+
+```
+
+```{r cm for testing data}
+
+# Confusion Matrix
+cm <- table(stroke_testing_numeric$stroke_yn, knn_model)
+cm
+
+```
+
+
+```{r getting metrics for KNN model}
+
+# Confusion Matrix
+cm <- table(stroke_testing_numeric$stroke_yn, knn_model)
+print(cm)
+
+# Calculate Accuracy
+accuracy <- sum(diag(cm)) / sum(cm)
+cat("Accuracy:", accuracy, "\n")
+
+# Calculate Precision and Recall for 'Yes' (1, stroke) class
+precision_yes <- cm["1", "1"] / sum(cm[, "1"])
+recall_yes <- cm["1", "1"] / sum(cm["1", ])
+cat("Precision (Yes, 1):", precision_yes, "\n")
+cat("Recall (Yes, 1):", recall_yes, "\n")
+
+# Calculate F1 Score for 'Yes' (1) class
+f1_yes <- 2 * (precision_yes * recall_yes) / (precision_yes + recall_yes)
+cat("F1 Score (Yes, 1):", f1_yes, "\n")
+
+# Calculate Precision and Recall for 'No' (0, no stroke) class
+precision_no <- cm["0", "0"] / sum(cm[, "0"])
+recall_no <- cm["0", "0"] / sum(cm["0", ])
+cat("Precision (No, 0):", precision_no, "\n")
+cat("Recall (No, 0):", recall_no, "\n")
+
+# Calculate F1 Score for 'No' (0) class
+f1_no <- 2 * (precision_no * recall_no) / (precision_no + recall_no)
+cat("F1 Score (No, 0):", f1_no, "\n")
+
+```
+
+
+```{r auroc curve for knn model}
+
+attributes(knn_model)$prob
+
+roc(stroke_testing$stroke_yn, attributes(knn_model)$prob)
+
+plot(roc(stroke_testing$stroke_yn, attributes(knn_model)$prob),
+     print.thres = T,
+     print.auc=T)
+
+```
+
+```{r saving knn model to a .rds file}
+
+saveRDS(knn_model, "knn_model.rds")
+
+```
+
+
+
+### Evaluating and Selecting Models
+
+```{r getting metrics for the RF model}
+
+# Random Forest Model
+
+rf_training_results <- rf_training_results %>%
+  mutate(truth = as.numeric(truth), .pred_class = as.numeric(.pred_class))
+
+# to calculate accuracy
+Metrics::accuracy(rf_training_results$.pred_class, rf_training_results$truth)
+
+# to calculate recall
+Metrics::recall(rf_training_results$.pred_class, rf_training_results$truth)
+
+# to calculate precision
+Metrics::precision(rf_training_results$.pred_class, rf_training_results$truth)
+
+# to calculate f1_score
+Metrics::f1(rf_training_results$.pred_class, rf_training_results$truth)
+
+# to calculate auc
+Metrics::auc(rf_training_results$.pred_class, rf_training_results$truth)
+
+# to calculate rmse
+Metrics::rmse(rf_training_results$.pred_class, rf_training_results$truth)
+
+```
+
+```{r getting metrics for the NB model}
+
+# Naive Bayes Classification
+
+stroke_training$stroke_yn <- as.numeric(stroke_training$stroke_yn)
+stroke_training$stroke_yn <- stroke_training$stroke_yn - 1
+
+p1 <- as.numeric(p1)
+p1 <- p1 - 1
+
+# to calculate accuracy
+Metrics::accuracy(p1, stroke_training$stroke_yn)
+
+# to calculate recall
+Metrics::recall(p1, stroke_training$stroke_yn)
+
+# to calculate precision
+Metrics::precision(p1, stroke_training$stroke_yn)
+
+# to calculate f1_score
+Metrics::f1(p1, stroke_training$stroke_yn)
+
+# to calculate auc
+Metrics::auc(p1, stroke_training$stroke_yn)
+
+# to calculate rmse
+Metrics::rmse(p1, stroke_training$stroke_yn)
+
+```
+
+```{r getting metrics for the KNN model}
+
+# K-Nearest Neighbor (KNN) classification (test results)
+# KNN is a so called 'lazy learning' algorithm so doesn't compute the training
+# results separately 
+
+
+# to calculate accuracy
+Metrics::accuracy(knn_model, stroke_testing_numeric$stroke_yn)
+
+# to calculate recall
+Metrics::recall(knn_model, stroke_testing_numeric$stroke_yn)
+
+# to calculate precision
+Metrics::precision(knn_model, stroke_testing_numeric$stroke_yn)
+
+# to calculate f1_score
+Metrics::f1(knn_model, stroke_testing_numeric$stroke_yn)
+
+# to calculate auc
+Metrics::auc(knn_model, stroke_testing_numeric$stroke_yn)
+
+# to calculate rmse
+Metrics::rmse(knn_model, stroke_testing_numeric$stroke_yn)
+
+```
+
+## Prediction Modelling Part 2 - SMOTE-Balanced Classes (8.5% Stroke) {.tabset .tabset-fade .tabset-pills}
+
+
+```{r checking the missingness of the stroke data df}
+
+ff_glimpse(stroke_training)
+
+```
+
+```{r SMOTE to get stroke yes rate to 8.5%}
+
+# Apply SMOTE
+# stroke_data_balanced <- SMOTE(stroke_yn ~ ., data = stroke_data)  
+# 
+# table(stroke_data_balanced$stroke_yn)
+
+```
+
+```{r one hot encoding stroke data in X df to be suitable for SMOTE function}
+
+# Convert categorical columns to numeric (e.g., using one-hot encoding)
+# If you have factor columns, convert them into dummy variables using model.matrix
+X <- stroke_training[, !names(stroke_training) %in% "stroke"]  # Exclude target variable
+
+X <- X %>% select(-stroke_yn)
+
+X$gender <- as.factor(X$gender)
+
+X$ever_married <- as.factor(X$ever_married)
+
+
+
+# Convert factors into numeric columns (one-hot encoding)
+X <- data.frame(lapply(X, function(x) {
+  if (is.factor(x)) {
+    as.numeric(factor(x))  # Convert factors to numeric
+  } else {
+    x  # Keep numeric columns as they are
+  }
+}))
+
+# Now check if all columns are numeric
+str(X)
+
+# Prepare target variable
+target <- stroke_data$stroke  # The target variable (should already be numeric or a factor)
+
+# Ensure target is a factor or numeric
+target <- as.numeric(target)
+
+head(target)
+
+```
+
+```{r using the SMOTE function to balance outcome variable}
+
+# Define target count for 'Yes' cases
+total_size <- 4253  # Desired total dataset size
+target_yes <- round(0.085 * total_size)  # 8.5% of 4253 → 361 'Yes' cases
+
+# Apply SMOTE to oversample 'Yes' cases
+# K = Number of nearest neighbors to use when generating synthetic samples
+# Higher K → synthetic points are more spread out, using a larger neighborhood
+# Lower K → synthetic points are closer to existing minority points, staying more compact
+smote_result <- SMOTE(X, target, K = 5, dup_size = 20)  # dup_size controls oversampling
+
+# Extract synthetic and original data
+
+oversampled_data <- as.data.frame(smote_result$data)
+colnames(oversampled_data)[ncol(oversampled_data)] <- "stroke"  # Rename target column
+
+oversampled_data$stroke <- as.numeric(as.character(oversampled_data$stroke))
+
+# Separate 'Yes' and 'No' cases
+stroke_yes <- oversampled_data[oversampled_data$stroke == 1, ]
+stroke_no <- oversampled_data[oversampled_data$stroke == 0, ]
+
+# Ensure we only keep the required 'Yes' cases
+stroke_yes_final <- stroke_yes[1:target_yes, ]  # Keep only the first 361 'Yes' cases
+
+# Calculate how many 'No' cases to keep
+num_no_to_keep <- total_size - target_yes  # Ensure total remains 4,253
+
+# Randomly sample 'No' cases to balance the dataset
+set.seed(123)  # For reproducibility
+stroke_no_sampled <- stroke_no[sample(nrow(stroke_no), num_no_to_keep, replace = FALSE), ]
+
+# Combine the new balanced dataset
+balanced_data <- rbind(stroke_yes_final, stroke_no_sampled)
+
+# Check distribution
+table(balanced_data$stroke)
+
+```
+
+```{r checking that all the original Stroke cases are present in the post SMOTE Stroke IDs }
+
+#Obtaining the original Stroke cases from stroke_data#
+stroke_yes <- stroke_data[stroke_data$stroke_yn == "Yes", ]
+
+original_stroke_ids <- stroke_yes$id
+
+original_stroke_ids <- as.integer(original_stroke_ids)
+
+
+#Obtaining the post-SMOTE Stroke cases from balanced_data#
+stroke_yes_post_smote <- balanced_data[balanced_data$stroke == 1, ]
+
+post_smote_stroke_ids <- stroke_yes_post_smote$id
+
+#removing decimal places#
+post_smote_stroke_ids <- as.integer(post_smote_stroke_ids)
+
+#Using all() check the original IDs are still present#
+all(original_stroke_ids %in% post_smote_stroke_ids)
+
+```
+
+```{r checking the data}
+
+ff_glimpse(balanced_data)
+
+```
+
+```{r}
+
+# Step 1: Ensure IDs are unique
+post_smote_stroke_ids <- unique(post_smote_stroke_ids)
+original_stroke_ids   <- unique(original_stroke_ids)
+
+# Data frame of new stroke cases from SMOTE
+new_stroke_cases_df <- data.frame(
+  id        = post_smote_stroke_ids,
+  stroke_yn = "Yes"
+)
+
+# Join and update stroke_yn
+stroke_data_updated <- stroke_data %>%
+  left_join(new_stroke_cases_df, by = "id", suffix = c("", "_new")) %>%
+  mutate(
+    stroke_yn = if_else(!is.na(stroke_yn_new), "Yes", stroke_yn)  # overwrite where we have new cases
+  ) %>%
+  select(-stroke_yn_new)  # drop temporary column
+
+# Check result
+table(stroke_data_updated$stroke_yn)
 
 ```
