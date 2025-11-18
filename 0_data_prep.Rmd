@@ -31,11 +31,15 @@ pacman::p_load(tidyverse,knitr,kableExtra,finalfit,lubridate,data.table,
 ### First look at the data
 
 ```{r loading in data}
+
 stroke_data <- read_csv("healthcare-dataset-stroke-data.csv")
+
 ```
 
 ```{r looking at the data}
+
 str(stroke_data)
+
 ```
 
 ```{r checking overall dataset summarys stats and missingess}
@@ -1413,6 +1417,10 @@ stroke_data %>%
 
 
 ```{r generating a Stroke Data file}
+
+write_csv(stroke_training, "stroke_training.csv")
+
+write_csv(stroke_testing, "stroke_testing.csv")
 
 write_csv(stroke_data, "stroke_data.csv")
 

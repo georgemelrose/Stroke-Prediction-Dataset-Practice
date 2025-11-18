@@ -32,16 +32,34 @@ pacman::p_load(tidyverse,knitr,kableExtra,finalfit,lubridate,data.table,
 ### First look at the data
 
 ```{r loading in data}
+
 stroke_data <- read_csv("stroke_data.csv")
+
 ```
 
 ```{r looking at the data}
+
 str(stroke_data)
+
 ```
 
 ```{r checking overall dataset summarys stats and missingess}
+
 ff_glimpse(stroke_data)
+
 ```
+
+
+```{r generating factor variables}
+
+stroke_data <- stroke_data %>% mutate(across(c(hypertension_yn,heart_disease_yn,
+                                    stroke_yn,age_category,bmi_category,ever_married,
+                                    gender), ~ factor(.x)))
+
+
+```
+
+
 
 ```{r reorder factor variable levels, echo=FALSE}
 
@@ -63,19 +81,17 @@ stroke_data$residence_type <- factor(stroke_data$residence_type , levels = c("Ur
 
 levels(stroke_data$residence_type)
 
-```
+#age category#
 
+stroke_data$age_category <- factor(stroke_data$age_category , levels = c("<60", "60-69", "70-79", ">80"))
 
-```{r generating factor variables}
-
-stroke_data <- stroke_data %>% mutate(across(c(hypertension_yn,heart_disease_yn,
-                                    stroke_yn,age_category,bmi_category,ever_married,
-                                    gender), ~ factor(.x)))
-
+levels(stroke_data$age_category)
 
 ```
+
 
 ```{r doing ff labels for different variables, echo = FALSE}
+
 stroke_data$age_category <- stroke_data$age_category %>%
   ff_label("Age(years)")
 
@@ -139,6 +155,7 @@ summary(stroke_data$age)
     children. The maximum age of a patient is 82.
 
 ```{r counting the numbers and proportions of patients in the three different age categories}
+
 age_counts <- stroke_data %>%
   group_by(age_category) %>%
   summarise(patient_count = n()) %>%
@@ -179,6 +196,7 @@ The above bar chart is further confirmation that the age variable is
 indeed normally distributed.
 
 ```{r making an age counts table stratified by stroke yes or no}
+
 age_counts_w_stroke <- stroke_data %>%
   group_by(age_category,stroke_yn) %>%
   summarise(patient_count = n()) %>%
@@ -190,6 +208,7 @@ age_counts_w_stroke_table <- age_counts_w_stroke %>% rename("Percentage (%)" = p
 "No.Patients" = patient_count) %>% rename("Age Category" = age_category) %>% rename("Stroke (Yes/No)" = stroke_yn)
 
 flextable(age_counts_w_stroke_table)
+
 ```
 
 The table above displaying the no.patients in each age category
@@ -292,6 +311,7 @@ The distribution of patients is left skewed towards the 'Overweight' and
 'Obese' categories.
 
 ```{r making an bmi counts table stratified by stroke yes or no}
+
 bmi_counts_w_stroke <- stroke_data %>%
   group_by(bmi_category,stroke_yn) %>%
   summarise(patient_count = n()) %>%
@@ -303,6 +323,7 @@ bmi_counts_w_stroke_table <- bmi_counts_w_stroke %>% rename("Percentage (%)" = p
 "No.Patients" = patient_count) %>% rename("BMI Category" = bmi_category) %>% rename("Stroke (Yes/No)" = stroke_yn)
 
 flextable(bmi_counts_w_stroke_table)
+
 ```
 
 The above summary table shows the percentage of patients having a stroke
@@ -342,6 +363,7 @@ There is a higher rate of stroke associated with the 'Overweight' and
 ### Gender
 
 ```{r counting the numbers and proportions of patients by gender}
+
 gender_counts <- stroke_data %>%
   group_by(gender) %>%
   summarise(patient_count = n()) %>%
@@ -368,6 +390,7 @@ stroke_data <- stroke_data %>% filter(gender == "Male" | gender == "Female")
 ```
 
 ```{r plotting distribution of patients across the genders}
+
 #redoing gender counts to reflect removed 'other' patient'
 gender_counts <- stroke_data %>%
   group_by(gender) %>%
@@ -397,6 +420,7 @@ ggplot(gender_counts, aes(x = gender, y = patient_count)) +
 ```
 
 ```{r making a gender counts table stratified by stroke yes or no}
+
 gender_counts_w_stroke <- stroke_data %>%
   group_by(gender,stroke_yn) %>%
   summarise(patient_count = n()) %>%
@@ -408,6 +432,7 @@ gender_counts_w_stroke_table <- gender_counts_w_stroke %>% rename("Percentage (%
 "No.Patients" = patient_count) %>% rename("Gender" = gender) %>% rename("Stroke (Yes/No)" = stroke_yn)
 
 flextable(gender_counts_w_stroke_table)
+
 ```
 
 Interestingly, whilst there are many more female than male patients, the
@@ -415,6 +440,7 @@ rate of stroke between the 2 genders stays consistent. 5.4% (139) of
 females experienced stroke and 6.44% (108) of males experienced stroke.
 
 ```{r plotting distribution of patients across gender and stroke categories}
+
 ggplot(gender_counts_w_stroke, aes(x = gender, y = patient_count, fill = stroke_yn)) +
   geom_col(position = "dodge", alpha = 0.8) +
   geom_text(aes(label = patient_count), 
@@ -441,6 +467,7 @@ ggplot(gender_counts_w_stroke, aes(x = gender, y = patient_count, fill = stroke_
 ### Marriage
 
 ```{r counting the numbers and proportions of patients by marriage}
+
 ever_married_counts <- stroke_data %>%
   group_by(ever_married) %>%
   summarise(patient_count = n()) %>%
@@ -478,6 +505,7 @@ ggplot(ever_married_counts, aes(x = ever_married, y = patient_count)) +
 ```
 
 ```{r making a marriage counts table stratified by stroke yes or no}
+
 ever_married_counts_w_stroke <- stroke_data %>%
   group_by(ever_married,stroke_yn) %>%
   summarise(patient_count = n()) %>%
@@ -488,6 +516,7 @@ ever_married_counts_w_stroke <- stroke_data %>%
 ever_married_counts_w_stroke_table <- ever_married_counts_w_stroke %>% rename("Percentage (%)" = percentage) %>% rename("No.Patients" = patient_count) %>% rename("Ever Married?" = ever_married) %>% rename("Stroke (Yes/No)" = stroke_yn)
 
 flextable(ever_married_counts_w_stroke_table)
+
 ```
 
 The above table shows that the proportion of those patients experiencing
@@ -495,6 +524,7 @@ stroke who had ever married (6.56%) was more than twice as much as the
 proportion of patients experiencing stroke who had never married (3%).
 
 ```{r plotting distribution of patients across marriage and stroke categories}
+
 ggplot(ever_married_counts_w_stroke, aes(x = ever_married, y = patient_count, fill = stroke_yn)) +
   geom_col(position = "dodge", alpha = 0.8) +
   geom_text(aes(label = patient_count), 
@@ -521,6 +551,7 @@ ggplot(ever_married_counts_w_stroke, aes(x = ever_married, y = patient_count, fi
 ### Hypertension
 
 ```{r counting the numbers and proportions of patients by hypertension}
+
 hypertension_counts <- stroke_data %>%
   group_by(hypertension_yn) %>%
   summarise(patient_count = n()) %>%
@@ -558,6 +589,7 @@ ggplot(hypertension_counts, aes(x = hypertension_yn, y = patient_count)) +
 ```
 
 ```{r making a hypertension counts table stratified by stroke yes or no}
+
 hypertension_counts_w_stroke <- stroke_data %>%
   group_by(hypertension_yn,stroke_yn) %>%
   summarise(patient_count = n()) %>%
@@ -568,9 +600,11 @@ hypertension_counts_w_stroke <- stroke_data %>%
 hypertension_counts_w_stroke_table <- hypertension_counts_w_stroke %>% rename("Percentage (%)" = percentage) %>% rename("No.Patients" = patient_count) %>% rename("Hypertension?" = hypertension_yn) %>% rename("Stroke (Yes/No)" = stroke_yn)
 
 flextable(hypertension_counts_w_stroke_table)
+
 ```
 
 ```{r plotting distribution of patients across hypertension and stroke categories}
+
 ggplot(hypertension_counts_w_stroke, aes(x = hypertension_yn, y = patient_count, fill = stroke_yn)) +
   geom_col(position = "dodge", alpha = 0.8) +
   geom_text(aes(label = patient_count), 
@@ -601,6 +635,7 @@ had a stroke (4.82%).
 ### Work Type
 
 ```{r counting the numbers and proportions of patients by work type}
+
 work_counts <- stroke_data %>%
   group_by(work_type) %>%
   summarise(patient_count = n()) %>%
@@ -640,6 +675,7 @@ ggplot(work_counts, aes(x = work_type, y = patient_count)) +
 ### Chi-squared & Fisher's Exact Tests
 
 ```{r doing ff labels for different variables, echo = FALSE}
+
 stroke_data$age_category <- stroke_data$age_category %>%
   ff_label("Age(years)")
 
@@ -660,11 +696,13 @@ stroke_data$smoking_status <- stroke_data$smoking_status %>%
 
 stroke_data$work_type <- stroke_data$work_type %>%
   ff_label("Work Type")
+
 ```
 
 ```{r removing underweight bmi category}
+
 # Recode 'Unknown' to NA in all relevant columns
-stroke_data$bmi_category <- factor(stroke_data$bmi_category) # Ensure smoking_status is a factor
+stroke_data$bmi_category <- factor(stroke_data$bmi_category) 
 stroke_data$bmi_category[stroke_data$bmi_category  == "Underweight"] <- NA
 
 # Optionally drop the 'Unknown' level from the factor levels
@@ -672,11 +710,13 @@ stroke_data$bmi_category <- droplevels(stroke_data$bmi_category)
 
 stroke_data$bmi_category <- stroke_data$bmi_category %>%
   ff_label("BMI")
+
 ```
 
 #### Chi-squared tests
 
 ```{r chi squared tests for explanatory variables and stroke}
+
  stroke_data %>% 
   summary_factorlist(dependent = "stroke_yn", 
                      explanatory = 
@@ -697,6 +737,7 @@ stroke_data$bmi_category <- stroke_data$bmi_category %>%
 #### Fisher's exact tests
 
 ```{r fishers test for explanatory variables and stroke}
+
  stroke_data %>% 
   summary_factorlist(dependent = "stroke_yn", 
                      explanatory = 
@@ -718,6 +759,7 @@ stroke_data$bmi_category <- stroke_data$bmi_category %>%
 ### Facetted Visualisations
 
 ```{r stroke outcomes and hypertension statuses facetted by age and gender}
+
 p1 <- stroke_data %>% 
   ggplot(aes(x = hypertension_yn, fill=stroke_yn)) + 
   geom_bar(position = position_stack(reverse = TRUE)) +
@@ -731,9 +773,11 @@ p2 <- stroke_data %>%
   theme(legend.position = "bottom")
 
 p1 / p2
+
 ```
 
 ```{r hypertension statuses facetted by stroke}
+
 p1 <- stroke_data %>% 
   ggplot(aes(x = hypertension_yn, fill = stroke_yn)) + 
   geom_bar(position = position_stack(reverse = TRUE)) +
@@ -1052,6 +1096,7 @@ coxph(Surv(follow_up_years, status) ~ gender, data = stroke_data) %>%
 #### Model 1 - All explanatory variables
 
 ```{r Model 1 with all relevant explanatory variables}
+
 dependent = "Surv(follow_up_years, stroke)"
 dependent_label = "Strokes over 5 Years"
 
@@ -1082,6 +1127,7 @@ mykable = function(x){
    rename(" " = levels) %>%
    rename("  " = all) %>%
    mykable()
+ 
 ```
 
 ```{r model 1 HR plot, warning=FALSE, message=FALSE, include = TRUE, echo = FALSE,fig.width=10,fig.height=5,fig.align = 'center'}
@@ -1103,7 +1149,7 @@ tab[[2]] %>% knitr::kable()
 Key takeaways from Model 1:
 
 -   A good concordance/C-statistic. This indicates how well the model
-    predicts the order of events. A value of 0.747 means that in 74.7%
+    predicts the order of events. A value of 0.768 means that in 76.8%
     of the cases, the model correctly predicts that a patient who had a
     stroke earlier was at higher risk than a patient who did not or had
     the event later. Values range from 0.5 (no better than random
@@ -1124,14 +1170,15 @@ Key takeaways from Model 1:
     compared to the null model. This confirms that the predictors
     collectively contribute to explaining stroke risk.
 
--   With 247 events out of 4253 individuals, the model has a moderate
+-   With 246 events out of 4253 individuals, the model has a moderate
     number of events to estimate the relationships. The concordance SE
-    of 0.018 shows a relatively tight estimate of the concordance,
+    of 0.017 shows a relatively tight estimate of the concordance,
     suggesting reliable ranking performance.
 
 #### Model 2 - BMI and 'Work Type' excluded
 
 ```{r model 2 wo bmi or work type}
+
 dependent = "Surv(follow_up_years, stroke)"
 dependent_label = "Strokes over 5 Years"
 
@@ -1161,6 +1208,7 @@ mykable = function(x){
    rename(" " = levels) %>%
    rename("  " = all) %>%
    mykable()
+ 
 ```
 
 ```{r model 2 HR plot, warning=FALSE, message=FALSE, include = TRUE, echo = FALSE,fig.width=10,fig.height=5,fig.align = 'center'}
@@ -1182,6 +1230,7 @@ tab[[2]] %>% knitr::kable()
 #### Model 3 - Only Statistically Significant Variables
 
 ```{r model 3 with only statistically significant variables}
+
 dependent = "Surv(follow_up_years, stroke)"
 dependent_label = "Strokes over 5 Years"
 
@@ -1211,6 +1260,7 @@ mykable = function(x){
    rename(" " = levels) %>%
    rename("  " = all) %>%
    mykable()
+ 
 ```
 
 ```{r model 3 HR plot, warning=FALSE, message=FALSE, include = TRUE, echo = FALSE,fig.width=10,fig.height=5,fig.align = 'center'}
