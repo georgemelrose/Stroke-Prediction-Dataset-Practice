@@ -672,7 +672,7 @@ ff_glimpse(balanced_data)
 
 ```
 
-```{r}
+```{r updating the main dataframe}
 
 # Step 1: Ensure IDs are unique
 post_smote_stroke_ids <- unique(post_smote_stroke_ids)
