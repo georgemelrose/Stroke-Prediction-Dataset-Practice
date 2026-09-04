@@ -1,0 +1,3175 @@
+---
+title: "Stroke Data Analysis"
+author: "George Melrose"
+date: "`r Sys.Date()`"
+output: 
+ html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+
+rm(list = ls())
+
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
+
+pacman::p_load(tidyverse,knitr,kableExtra,finalfit,lubridate,data.table,
+               janitor,flextable,survival,survminer,rmdHelpers, ggrepel,
+               scales,RColorBrewer,GGally,randomForest,caret,DT,gtsummary,cardx,
+               ggsurvfit,mice,patchwork,rsample, parsnip,recipes,workflows,tune,
+               ranger,yardstick,vip,tidymodels,naivebayes,class,Metrics,shiny,
+               shinythemes,pROC,DMwR,smotefamily)
+
+```
+
+## Formatting Data {.tabset .tabset-fade .tabset-pills}
+
+### First look at the data
+
+```{r loading in data}
+stroke_data <- read_csv("healthcare-dataset-stroke-data.csv")
+```
+
+```{r looking at the data}
+str(stroke_data)
+```
+
+```{r checking overall dataset summarys stats and missingess}
+ff_glimpse(stroke_data)
+```
+
+```{r removing children from the dataset and format binary variables}
+
+#Removing children as lifestyle factors will be far less connected to pediatric stroke - https://www.stroke.org.uk/stroke/childhood/about #
+
+#No.rows with children#
+print(paste("The number of rows of the data with children included -", nrow(stroke_data)))
+
+#Removing children by filtering out all rows with age<18#
+children <- stroke_data %>% filter(age < 18)
+
+print(paste("The number of rows of the data that are children (age<18) -", nrow(children)))
+
+stroke_data <- stroke_data %>% filter(age >= 18)
+
+print(paste("The number of rows of the data without children included -", nrow(stroke_data)))
+
+#Creating yes/no (yn) versions of the binary outcome variables#
+stroke_data$hypertension_yn <- as.factor(ifelse(stroke_data$hypertension == 1, "Yes", "No"))
+stroke_data$heart_disease_yn <- as.factor(ifelse(stroke_data$heart_disease == 1, "Yes", "No"))
+stroke_data$stroke_yn <- as.factor(ifelse(stroke_data$stroke == 1, "Yes", "No"))
+
+#re-leveling above yn variables to have "No" as the default and adding ff_label command for cleaner formatting in finalfit plots#
+
+stroke_data <- stroke_data %>% mutate(
+  hypertension_yn = relevel(factor(hypertension_yn), ref = "No") %>% 
+    ff_label("Hypertension (Yes/No)"),
+  
+  heart_disease_yn = relevel(factor(heart_disease_yn), ref = "No") %>% 
+    ff_label("Heart Disease (Yes/No)"),
+  
+  stroke_yn = relevel(factor(stroke_yn), ref = "No") %>% 
+    ff_label("Stroke (Yes/No)")
+)
+
+```
+
+```{r adding follow up time for survival analysis}
+set.seed(123)  # For reproducibility
+
+# Simulate follow-up times in days
+stroke_data <- stroke_data %>% 
+  mutate(
+    follow_up_time_days = runif(n(), min = 0, max = 1825),  # Time between 0 and 5 years for all
+    # Assume the event occurs within the observed time or they are censored
+    status = ifelse(stroke == 1, 1, 0)  # 1 = event (stroke), 0 = censored (no stroke)
+  )
+
+# Making up a follow up time in years
+stroke_data <- stroke_data %>%
+  mutate(
+    follow_up_time_days = as.numeric(follow_up_time_days),  # Replace with your column name
+    follow_up_years = follow_up_time_days / 365         # Convert days to years
+  )
+
+# Show sample data with follow-up time in days
+head(stroke_data)
+
+datatable(stroke_data[1:10, ],options = list(scrollX = TRUE))
+```
+
+```{r making categorical variables of numeric variables}
+stroke_data$bmi <- as.numeric(stroke_data$bmi)
+
+stroke_data <- stroke_data %>% mutate(
+  # Create age categories
+  # Only 2 categories created as 18-35 year olds have only 1 stroke so meaningless
+  # to include them separately
+  age_category = case_when(
+   age < 60 ~ "<60",
+   age >= 60 & age < 70 ~ "60-69",
+   age >= 70 & age < 80 ~ "70-79",
+   age >= 80 ~ ">80"
+  ) %>% factor(levels = c("<60","60-69","70-79",">80")),
+  
+  # Create BMI categories
+  bmi_category = case_when(
+    bmi < 18.5 ~ "Underweight",
+    bmi >= 18.5 & bmi <= 24.9 ~ "Normal weight",
+    bmi >= 25 & bmi <= 29.9 ~ "Overweight",
+    bmi >= 30 ~ "Obese",
+    TRUE ~ NA_character_
+  ) %>% factor(levels = c("Underweight", "Normal weight", "Overweight", "Obese"))
+  
+)
+  
+```
+
+```{r marking unknowns in smoking status as na}
+# Recode 'Unknown' to NA in all relevant columns
+stroke_data$smoking_status <- factor(stroke_data$smoking_status) # Ensure smoking_status is a factor
+stroke_data$smoking_status[stroke_data$smoking_status == "Unknown"] <- NA
+
+# Optionally drop the 'Unknown' level from the factor levels
+stroke_data$smoking_status <- droplevels(stroke_data$smoking_status)
+```
+
+```{r doing ff labels for different variables, echo = FALSE}
+stroke_data$age_category <- stroke_data$age_category %>%
+  ff_label("Age(years)")
+
+stroke_data$bmi <- stroke_data$bmi %>%
+  ff_label("BMI")
+
+stroke_data$bmi_category <- stroke_data$bmi_category %>%
+  ff_label("BMI (category)")
+
+stroke_data$ever_married <- stroke_data$ever_married %>%
+  ff_label("Ever Married?")
+
+stroke_data$gender <- stroke_data$gender %>%
+  ff_label("Gender")
+
+stroke_data$residence_type <- stroke_data$residence_type %>%
+  ff_label("Residence Type")
+
+stroke_data$smoking_status <- stroke_data$smoking_status %>%
+  ff_label("Smoking Status")
+
+stroke_data$work_type <- stroke_data$work_type %>%
+  ff_label("Work Type")
+```
+
+
+### Removing Blood Glucose Variable
+
+The average glucose level variable can be considered redundant or less
+informative for exploratory data analysis (EDA) without additional
+context about when the readings were taken.
+
+Glucose levels can fluctuate significantly based on factors such as
+fasting status, recent meals, and time of day. For example, a reading
+taken shortly after eating will typically be higher than a fasting
+reading -
+
+```{r blood glucose chart,  fig.cap="Blood Glucose Chart from 'Lark Health' "}
+knitr::include_graphics("BloodGlucoseChart.jpeg")
+```
+
+Without knowing the conditions under which the glucose levels were
+measured, it becomes difficult to draw meaningful conclusions or
+identify trends during EDA. A reading labeled as "normal" may not
+actually reflect the patient’s metabolic health.
+
+```{r removing glucose level variable from dataset and looking at data types of dataset}
+stroke_data <- stroke_data %>% select(-avg_glucose_level)
+
+str(stroke_data)
+
+datatable(stroke_data[1:10, ],options = list(scrollX = TRUE))
+```
+
+
+
+```{r split data into test and train}
+set.seed(1234)
+
+
+stroke_split <- initial_split(stroke_data, prop = 0.8)
+# train_data
+stroke_training <- training(stroke_split)
+# test_data
+stroke_testing <- testing(stroke_split)
+```
+
+### Handling Missingness
+
+#### Missingness in the whole original Stroke dataset
+
+```{r checking missingness again after making variables numeric}
+ff_glimpse(stroke_data)
+```
+
+```{r checking missingness in the bmi category variable }
+# Check how many NAs are in the categorical variable and inspect its unique values
+na_categorical_count <- sum(is.na(stroke_data$bmi_category))
+cat("Number of NAs in categorical BMI variable:", na_categorical_count, "\n")
+
+# View unique BMI category values
+unique(stroke_data$bmi_category)
+```
+
+There are 181 NAs in the original 'bmi' variable. These didn't show up
+in the first usage of ff_glimpse() as the variable was a *character*
+type, so N/A and a numeric value were treated the same. A second usage
+of ff_glimpse() shows the 181 NAs, which of course are then carried on
+to the categorical variable when that is made.
+
+```{r missing values plot}
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","age_category")
+dependent <- "stroke_yn"
+
+ stroke_data %>% 
+  missing_plot(dependent, explanatory, title = "Missingness for the whole dataset")
+
+ 
+```
+
+There are different types of missingness:
+
+-   **MCAR (Missing Completely at Random)** - "Missing data values do
+    not relate to any other data in the dataset and there is no pattern
+    to the actual values of the missing data themselves."
+
+-   **MAR (Missing at Random)** - "This is confusing and would be better
+    named *missing conditionally at random*. Here, missingness in a
+    particular variable has an association with one or more other
+    variables in the dataset. However, the actual values of the missing
+    data are random."
+
+-   **MNAR (Missing not at random)** - "The pattern of missingness is
+    related to other variables in the dataset, but in addition, *the
+    actual values of the missing data are not random*."
+
+Fo example, in a different dataset, smoking status would be missing in
+females more likely to smoke but not in males.
+
+"Thus, the complete case female patients have different characteristics
+to the missing data female patients. For instance, the missing data
+female patients may be more likely to die after cancer treatment.
+Looking at our available population, ***we therefore under estimate the
+likelihood of a female dying from cancer treatment***."
+
+"In deciding whether data is MCAR or MAR, one approach is to explore
+patterns of missingness between levels of included variables. This is
+particularly important...for a primary outcome measure / dependent
+variable.
+
+Take for example “death”. When that outcome is missing it is often for a
+particular reason. For example, perhaps patients undergoing emergency
+surgery were less likely to have complete records compared with those
+undergoing planned surgery. And of course, death is more likely after
+emergency surgery."
+
+```{r looking for patterns of missingness}
+
+stroke_data %>% 
+  missing_pattern(dependent, explanatory)
+
+```
+
+##### BMI
+
+```{r checking for associations between missing and observed data part 1 bmi}
+explanatory <- c("bmi","gender","hypertension_yn","ever_married")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed data part 2 bmi}
+explanatory <- c("bmi","work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed data part 3 bmi}
+explanatory <- c("bmi","heart_disease_yn","age")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+Looking at the above 3 plots, the following can be observed:
+
+-   There is more missingness for the BMI variable in those patients who
+    have stroke than those who do not.
+
+-   There is also slightly more missingness in those with hypertension
+    than those patients without it.
+
+-   In those patients with heart disease and an average older patients ,
+    there is also more BMI missingness.
+
+-   Given the above info., we can conclude that the BMI variable
+    missingness is MAR - *missingness in a particular variable that has
+    an association with one or more other variables in the dataset*.
+
+The relevant variables that have an association with missingness in bmi
+are selected for a single missing pairs plot below.
+
+```{r generating a missing pairs plot of associated variables strokeyn heartdisease hypertension age}
+
+explanatory <- c("bmi","heart_disease_yn","hypertension_yn","age")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill", title = "Missing Data Matrix - BMI")
+
+```
+
+##### Smoking Status
+
+```{r checking for associations between missing and observed data part 1 smoking}
+explanatory <- c("smoking_status", "bmi","gender","hypertension_yn")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed data part 2 smoking}
+explanatory <- c("smoking_status","work_type","residence_type","heart_disease_yn", "age")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+Looking at the 2 above plots, the following can be seen:
+
+-   There is more missingness for the smoking_status variable in those
+    patients who do not have hypertension than those who do.
+
+-   There is significant difference in smoking_status missingness across
+    'Work Type'.
+
+-   Given the above, we can conclude that the smoking_status variable
+    missingness is also MAR.
+
+The relevant variables that have an association with missingness in
+smoking_status are selected for a single missing pairs plot below.
+
+```{r generating a missing pairs plot of associated variables}
+
+explanatory <- c("smoking_status","hypertension_yn","work_type")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill",title = "Missing Data Matrix - smoking_status")
+
+
+```
+
+```{r generating necessary factor variables}
+
+#gender#
+stroke_data$gender <- as.factor(stroke_data$gender)
+
+summary(stroke_data$gender)
+
+#ever_married#
+
+stroke_data$ever_married <- as.factor(stroke_data$ever_married)
+
+summary(stroke_data$ever_married)
+
+#work_type#
+stroke_data$work_type <- as.factor(stroke_data$work_type)
+
+summary(stroke_data$work_type)
+
+#residence_type#
+stroke_data$residence_type <- as.factor(stroke_data$residence_type)
+
+summary(stroke_data$residence_type)
+
+#smoking_status#
+stroke_data$smoking_status <- as.factor(stroke_data$smoking_status)
+
+summary(stroke_data$smoking_status)
+
+```
+
+In the gender and work_type variables there are factor levels with
+minuscule values - 'Other' in gender with 1 and 'Never_worked' in
+work_type with 5. These numbers are extremely small and likely to
+disturb further analysis so I'll make them NA so as to not lose the
+patients but not have the awkward category either.
+
+```{r making nas from and dropping factor levels with too little in them}
+
+stroke_data$gender[stroke_data$gender == "Other"] <- NA
+
+stroke_data$work_type[stroke_data$work_type == "Never_worked"] <- NA
+
+stroke_data$gender <- droplevels(stroke_data$gender)
+
+stroke_data$work_type <- droplevels(stroke_data$work_type)
+
+
+summary(stroke_data$gender)
+
+summary(stroke_data$work_type)
+
+```
+
+#### Missingness in the training Stroke dataset
+
+To avoid data leakage, imputation shall have to be done on the
+respective stroke training and testing datasets rather than the whole
+'stroke_data' dataframe. Data leakage happens when information from the
+test set influences the training process, leading to overly optimistic
+performance estimates.If imputation happens before splitting, the
+imputer learns from the entire dataset, including the test set, which
+can introduce bias.
+
+This ensures that the test set remains unseen during training,
+preserving the integrity of model evaluation. To be pedantic, the above plots 
+code visualising missingness for all the dataframe and for the variables 
+showing missingness is run again for training data in this section. Testing data
+missingness and subsequent MICE is covered in the next section. 
+
+
+```{r missing values plot for training data}
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","age_category")
+dependent <- "stroke_yn"
+
+ stroke_training %>% 
+  missing_plot(dependent, explanatory, title = "Missingness for Training Data")
+ 
+```
+
+
+```{r looking for patterns of missingness in the training data}
+
+stroke_training %>% 
+  missing_pattern(dependent, explanatory)
+
+```
+
+
+##### BMI
+
+```{r checking for associations between missing and observed training data part 1 bmi}
+explanatory <- c("bmi","gender","hypertension_yn","ever_married")
+dependent <- "stroke_yn"
+
+stroke_training  %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed training data part 2 bmi}
+explanatory <- c("bmi","work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+
+```
+
+```{r checking for associations between missing and observed training data part 3 bmi}
+explanatory <- c("bmi","heart_disease_yn","age")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+
+The above 3 plots for the stroke training data have the same patterns as for the
+whole 'stroke_data' dataset:
+
+-   More missingness for the BMI variable in those patients who have stroke than
+    those who do not.
+
+-   Slightly more missingness in those with hypertension than those patients 
+    without it.
+
+-   In those patients with heart disease and on average older patients ,
+    there is also more BMI missingness.
+
+-   MAR for stroke_training.
+
+Again, the relevant variables that have an association with missingness in bmi
+are selected for a single missing pairs plot.
+
+
+```{r generating a missing pairs plot of associated variables strokeyn heartdisease hypertension age in training data}
+
+explanatory <- c("bmi","heart_disease_yn","hypertension_yn","age")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill", title = "Missing Data Matrix - BMI")
+
+```
+
+##### Smoking Status
+
+```{r checking for associations between missing and observed data part 1 smoking in training data}
+explanatory <- c("smoking_status", "bmi","gender","hypertension_yn")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed data part 2 smoking in training data}
+explanatory <- c("smoking_status","work_type","residence_type","heart_disease_yn", "age")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+
+Looking at the 2 above plots, we can observe the following for the training data:
+
+    
+-   There is more missingness for the smoking_status variable in those
+    patients who don't have hypertension than those who do.
+
+-   There is significant difference in smoking_status missingness across
+    'Work Type'.
+
+-   Given the above, we can conclude that the smoking_status variable
+    missingness is also MAR.
+
+A single missing pairs plot below is made of the most relevant variables.
+
+
+```{r generating a missing pairs plot of associated variables in training data smoking status}
+
+explanatory <- c("smoking_status","hypertension_yn","work_type")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill",title = "Missing Data Matrix - smoking_status")
+
+
+```
+
+
+#### MICE on training data MAR BMI & Smoking Status
+
+Multivariate Imputation by Chained Equations (mice) is "*...the process
+of filling in missing data using a best-estimate from all the other data
+that exists.*" (Section 11.8.1 of the HealthyR book)
+
+If missingness in BMI is predicted strongly by stroke outcome (and other
+observed variables), and the values of the missing data are random, then
+we can impute (best-guess) the missing BMI values using those variables.
+
+"*Imputation is not usually appropriate for the explanatory variable of
+interest or the outcome variable, although these can be used to impute
+other variables. In both cases, the hypothesis is that there is a
+meaningful association with other variables in the dataset, therefore it
+doesn’t make sense to use these variables to impute them.*"
+
+The multiple imputation process is as follows:
+
+-   **Impute** missing data *m* times, resulting in *m* complete
+    datasets.
+
+-   **Diagnose** the quality of the impute values.
+
+-   **Analyse** each completed dataset.
+
+-   **Pool** the results of the reported analyses.
+
+
+#### Impute
+
+```{r choosing variables to be imputed and be used in imputation }
+
+explanatory <- c("id","bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+#Choosing variables to not be imputed but still used by the mice function# 
+stroke_training %>% 
+  select(dependent, explanatory) %>% 
+  missing_predictorMatrix(
+    drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","stroke_yn","id"),
+    drop_from_imputer = c("gender", "ever_married", "residence_type", "id")
+  ) -> predM
+
+```
+
+```{r make 10 imputed datasets and run our logistic regression analysis on each set }
+fits <- stroke_training %>% 
+  select(dependent, explanatory) %>% 
+  
+  # Run imputation with 10 imputed sets
+  mice(m = 10, predictorMatrix = predM) %>% 
+  
+  # Run logistic regression on each imputed set
+  with(glm(formula(ff_formula(dependent, explanatory)), 
+           family="binomial"))
+```
+
+
+#### Diagnose
+
+```{r extracting aics}
+# Examples of extracting metrics from fits and taking the mean
+## AICs
+fits %>% 
+  getfit() %>% 
+  purrr::map(AIC) %>%
+  unlist() %>% 
+  mean()
+```
+
+```{r obtaining the c statistic}
+# C-statistic
+fits %>% 
+  getfit() %>% 
+  purrr::map(~ pROC::roc(.x$y, .x$fitted)$auc) %>% 
+  unlist() %>% 
+  mean()
+```
+
+#### Analyse
+
+```{r pool the results of the model and visualise in an or plot}
+# Pool results
+fits_pool <- fits %>% 
+  pool()
+
+## Can be passed to or_plot
+stroke_training %>% 
+  or_plot(dependent, explanatory, glmfit = fits_pool, table_text_size=4)
+```
+
+#### Pool
+
+```{r summarise log reg models that do not have and have imputed bmi}
+# Summarise and put in table
+fit_imputed <- fits_pool %>%                                  
+  fit2df(estimate_name = "OR (multiple imputation)", exp = TRUE)
+
+# Use finalfit merge methods to create and compare results
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
+
+table_uni_multi <- stroke_training %>% 
+  finalfit(dependent, explanatory, keep_fit_id = TRUE) 
+
+explanatory = c("gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
+
+fit_multi_no_bmi <- stroke_training %>% 
+  glmmulti(dependent, explanatory) %>% 
+  fit2df(estimate_suffix = " (multivariable without BMI)") 
+
+# Combine to final table
+table_imputed <- 
+  table_uni_multi %>% 
+  ff_merge(fit_multi_no_bmi) %>% 
+  ff_merge(fit_imputed, last_merge = TRUE)
+
+table_imputed 
+```
+
+```{r summarise log reg models that do not have and have imputed smoking status}
+# Summarise and put in table
+fit_imputed <- fits_pool %>%                                  
+  fit2df(estimate_name = "OR (multiple imputation)", exp = TRUE)
+
+# Use finalfit merge methods to create and compare results
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
+
+table_uni_multi <- stroke_training %>% 
+  finalfit(dependent, explanatory, keep_fit_id = TRUE) 
+
+explanatory = c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type")
+
+fit_multi_no_smoking_status <- stroke_training %>% 
+  glmmulti(dependent, explanatory) %>% 
+  fit2df(estimate_suffix = " (multivariable without Smoking Status)") 
+
+# Combine to final table
+table_imputed <- 
+  table_uni_multi %>% 
+  ff_merge(fit_multi_no_smoking_status) %>% 
+  ff_merge(fit_imputed, last_merge = TRUE)
+
+table_imputed 
+```
+
+
+#### Generating Data & Adding Imputed Values to stroke_training 
+
+```{r doing mice again to save and extract the data}
+explanatory <- c("id","bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  select(dependent, explanatory) %>% 
+  missing_predictorMatrix(
+  drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","stroke_yn","id"),
+    drop_from_imputer = c("gender","ever_married","residence_type","id")
+  ) -> predM
+
+fits <- stroke_training %>%
+select(dependent, explanatory) %>%
+mice(m = 10, predictorMatrix = predM)
+
+
+completedData <- complete(fits, action = 1)
+```
+
+
+```{r scatterplot of original and imputed data bmi vs age}
+#scatter plot of original and imputed data with the magenta points being the imputed data points and the blue points being the observed values#
+
+xyplot(fits,bmi ~ age,pch=18,cex=1)
+
+```
+
+```{r density plot of observed and imputed values for smoking status}
+# Convert your factor variable to a factor with appropriate levels
+fits$data$smoking_status <- factor(fits$data$smoking_status)
+
+# Now, create the density plot again with factor levels on the x-axis
+densityplot(fits, 
+            ~ smoking_status,                     # Factor variable with levels
+            main = "Density of Observed and Imputed Values for Smoking Status",
+            xlab = "Smoking Status",               # Custom x-axis label
+            scales = list(x = list(at = 1:length(levels(fits$data$smoking_status)), 
+                                   labels = levels(fits$data$smoking_status))))
+```
+
+The above is a scatter plot of original and imputed data with the magenta points 
+being the imputed data points and the blue points being the observed values. 
+The matching shape is a good verification of the imputed values indeed being 
+plausible.
+
+```{r density plot of observed and imputed values for bmi}
+densityplot(fits, 
+            ~ bmi,                     # Factor variable with levels
+            main = "Density of Observed and Imputed Values for BMI",
+            xlab = "BMI")
+```
+
+The density of the imputed data for each imputed dataset is magenta and
+the density of the observed data is blue. Again, we expect the
+distributions to be similar.
+
+```{r extracting id and bmi and limiting to just ids wo valid bmi}
+
+ids_wo_bmi <- stroke_training %>% filter(is.na(bmi))
+
+ids_wo_bmi <- ids_wo_bmi$id
+
+imputed_bmi_values <- completedData %>% select(id, bmi)
+
+imputed_bmi_values <- imputed_bmi_values %>% filter(id %in% ids_wo_bmi)
+```
+
+```{r adding imputed bmi values back to stroke data df}
+
+stroke_training <- stroke_training %>%
+  left_join(imputed_bmi_values, by = "id", suffix = c("", ".new")) %>%
+  mutate(bmi = coalesce(bmi, bmi.new)) %>%
+  select(-bmi.new)
+```
+
+```{r extracting id and smoking status and limiting to just ids wo valid smoking status}
+
+ids_wo_smoking_status <- stroke_training %>% filter(is.na(smoking_status))
+
+ids_wo_smoking_status  <- ids_wo_smoking_status$id
+
+imputed_smoking_status_values <- completedData %>% select(id, smoking_status)
+
+imputed_smoking_status_values <- imputed_smoking_status_values %>% filter(id %in% ids_wo_smoking_status)
+```
+
+```{r adding imputed smoking_status values back to stroke data df}
+
+stroke_training <- stroke_training %>%
+  left_join(imputed_smoking_status_values, by = "id", suffix = c("", ".new")) %>%
+  mutate(smoking_status = coalesce(smoking_status, smoking_status.new)) %>%
+  select(-smoking_status.new)
+```
+
+```{r redoing the bmi category variable based on imputed data}
+
+stroke_training <- stroke_training %>% mutate(
+  
+  # Create BMI categories
+  bmi_category = case_when(
+    bmi < 18.5 ~ "Underweight",
+    bmi >= 18.5 & bmi <= 24.9 ~ "Normal weight",
+    bmi >= 25 & bmi <= 29.9 ~ "Overweight",
+    bmi >= 30 ~ "Obese",
+    TRUE ~ NA_character_
+  ) %>% factor(levels = c("Normal weight", "Underweight", "Overweight", "Obese"))
+  
+)
+  
+```
+
+```{r double check missingness has been sorted}
+
+stroke_training <- stroke_training %>%
+mutate(across(where(is.factor),droplevels))
+
+ff_glimpse(stroke_training)
+
+```
+
+
+
+```{r missing values plot for training data}
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","age_category")
+dependent <- "stroke_yn"
+
+ stroke_training %>% 
+  missing_plot(dependent, explanatory, title = "Missingness for Training Data")
+ 
+```
+
+
+```{r looking for patterns of missingness in the training data}
+
+stroke_training %>% 
+  missing_pattern(dependent, explanatory)
+
+```
+
+
+##### BMI
+
+```{r checking for associations between missing and observed training data part 1 bmi}
+explanatory <- c("bmi","gender","hypertension_yn","ever_married")
+dependent <- "stroke_yn"
+
+stroke_training  %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed training data part 2 bmi}
+explanatory <- c("bmi","work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+
+```
+
+```{r checking for associations between missing and observed training data part 3 bmi}
+explanatory <- c("bmi","heart_disease_yn","age")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+
+The above 3 plots for the stroke training data have the same patterns as for the
+whole 'stroke_data' dataset:
+
+-   More missingness for the BMI variable in those patients who have stroke than
+    those who do not.
+
+-   Slightly more missingness in those with hypertension than those patients 
+    without it.
+
+-   In those patients with heart disease and on average older patients ,
+    there is also more BMI missingness.
+
+-   MAR for stroke_training.
+
+Again, the relevant variables that have an association with missingness in bmi
+are selected for a single missing pairs plot.
+
+
+```{r generating a missing pairs plot of associated variables strokeyn heartdisease hypertension age in training data}
+
+explanatory <- c("bmi","heart_disease_yn","hypertension_yn","age")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill", title = "Missing Data Matrix - BMI")
+
+```
+
+##### Smoking Status
+
+```{r checking for associations between missing and observed data part 1 smoking in training data}
+explanatory <- c("smoking_status", "bmi","gender","hypertension_yn")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed data part 2 smoking in training data}
+explanatory <- c("smoking_status","work_type","residence_type","heart_disease_yn", "age")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+
+Looking at the 2 above plots, we can observe the following for the training data:
+
+    
+-   There is more missingness for the smoking_status variable in those
+    patients who don't have hypertension than those who do.
+
+-   There is significant difference in smoking_status missingness across
+    'Work Type'.
+
+-   Given the above, we can conclude that the smoking_status variable
+    missingness is also MAR.
+
+A single missing pairs plot below is made of the most relevant variables.
+
+
+```{r generating a missing pairs plot of associated variables in training data smoking status}
+
+explanatory <- c("smoking_status","hypertension_yn","work_type")
+dependent <- "stroke_yn"
+
+stroke_training %>% 
+  missing_pairs(dependent, explanatory, position = "fill",title = "Missing Data Matrix - smoking_status")
+
+
+```
+
+
+
+
+
+#### Missingness in the testing Stroke dataset
+
+
+```{r missing values plot for testing data}
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","age_category")
+dependent <- "stroke_yn"
+
+ stroke_testing %>% 
+  missing_plot(dependent, explanatory, title = "Missingness for testing Data")
+ 
+```
+
+
+```{r looking for patterns of missingness in the testing data}
+
+stroke_testing %>% 
+  missing_pattern(dependent, explanatory)
+
+```
+
+
+##### BMI
+
+```{r checking for associations between missing and observed testing data part 1 bmi}
+explanatory <- c("bmi","gender","hypertension_yn","ever_married")
+dependent <- "stroke_yn"
+
+stroke_testing  %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed testing data part 2 bmi}
+explanatory <- c("bmi","work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_testing %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+
+```
+
+```{r checking for associations between missing and observed testing data part 3 bmi}
+explanatory <- c("bmi","heart_disease_yn","age")
+dependent <- "stroke_yn"
+
+stroke_testing %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+
+The above 3 plots for the stroke testing data have the same patterns as for the
+whole 'stroke_data' dataset:
+
+-   More missingness for the BMI variable in those patients who have stroke than
+    those who do not.
+
+-   Slightly more missingness in those with hypertension than those patients 
+    without it.
+
+-   In those patients with heart disease and on average older patients ,
+    there is also more BMI missingness.
+
+-   MAR for stroke_testing.
+
+Once more, the relevant variables that have an association with missingness in BMI
+are selected for a single missing pairs plot.
+
+
+```{r generating a missing pairs plot of associated variables strokeyn heartdisease hypertension age in testing data}
+
+explanatory <- c("bmi","heart_disease_yn","hypertension_yn","age")
+dependent <- "stroke_yn"
+
+stroke_testing %>% 
+  missing_pairs(dependent, explanatory, position = "fill", title = "Missing Data Matrix - BMI")
+
+```
+
+##### Smoking Status
+
+```{r checking for associations between missing and observed data part 1 smoking in testing data}
+explanatory <- c("smoking_status", "bmi","gender","hypertension_yn")
+dependent <- "stroke_yn"
+
+stroke_testing %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+```{r checking for associations between missing and observed data part 2 smoking in testing data}
+explanatory <- c("smoking_status","work_type","residence_type","heart_disease_yn", "age")
+dependent <- "stroke_yn"
+
+stroke_data %>% 
+  missing_pairs(dependent, explanatory, position = "fill")
+
+```
+
+
+Looking at the 2 above plots, we can observe the following for the testing data:
+
+    
+-   There is more missingness for the smoking_status variable in those
+    patients who don't have hypertension than those who do.
+
+-   There is significant difference in smoking_status missingness across
+    'Work Type'.
+
+-   Given the above, we can conclude that the smoking_status variable
+    missingness is also MAR.
+
+A single missing pairs plot below is made of the most relevant variables.
+
+
+```{r generating a missing pairs plot of associated variables in testing data smoking status}
+
+explanatory <- c("smoking_status","hypertension_yn","work_type")
+dependent <- "stroke_yn"
+
+stroke_testing %>% 
+  missing_pairs(dependent, explanatory, position = "fill",title = "Missing Data Matrix - smoking_status")
+
+
+```
+
+
+
+#### MICE on testing data MAR BMI & Smoking Status
+
+```{r choosing variables to be imputed and be used in imputation }
+
+explanatory <- c("id","bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+#Choosing variables to not be imputed but still used by the mice function# 
+stroke_testing %>% 
+  select(dependent, explanatory) %>% 
+  missing_predictorMatrix(
+    drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","stroke_yn","id"),
+    drop_from_imputer = c("gender", "ever_married", "residence_type", "id")
+  ) -> predM
+
+```
+
+```{r make 10 imputed datasets and run our logistic regression analysis on each set }
+fits <- stroke_testing %>% 
+  select(dependent, explanatory) %>% 
+  
+  # Run imputation with 10 imputed sets
+  mice(m = 10, predictorMatrix = predM) %>% 
+  
+  # Run logistic regression on each imputed set
+  with(glm(formula(ff_formula(dependent, explanatory)), 
+           family="binomial"))
+```
+
+
+#### Diagnose
+
+```{r extracting aics}
+# Examples of extracting metrics from fits and taking the mean
+## AICs
+fits %>% 
+  getfit() %>% 
+  purrr::map(AIC) %>%
+  unlist() %>% 
+  mean()
+```
+
+```{r obtaining the c statistic}
+# C-statistic
+fits %>% 
+  getfit() %>% 
+  purrr::map(~ pROC::roc(.x$y, .x$fitted)$auc) %>% 
+  unlist() %>% 
+  mean()
+```
+
+#### Analyse
+
+```{r pool the results of the model and visualise in an or plot}
+# Pool results
+fits_pool <- fits %>% 
+  pool()
+
+## Can be passed to or_plot
+stroke_testing %>% 
+  or_plot(dependent, explanatory, glmfit = fits_pool, table_text_size=4)
+```
+
+#### Pool
+
+```{r summarise log reg models that do not have and have imputed bmi}
+# Summarise and put in table
+fit_imputed <- fits_pool %>%                                  
+  fit2df(estimate_name = "OR (multiple imputation)", exp = TRUE)
+
+# Use finalfit merge methods to create and compare results
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
+
+table_uni_multi <- stroke_testing %>% 
+  finalfit(dependent, explanatory, keep_fit_id = TRUE) 
+
+explanatory = c("gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
+
+fit_multi_no_bmi <- stroke_testing %>% 
+  glmmulti(dependent, explanatory) %>% 
+  fit2df(estimate_suffix = " (multivariable without BMI)") 
+
+# Combine to final table
+table_imputed <- 
+  table_uni_multi %>% 
+  ff_merge(fit_multi_no_bmi) %>% 
+  ff_merge(fit_imputed, last_merge = TRUE)
+
+table_imputed 
+```
+
+```{r summarise log reg models that do not have and have imputed smoking status}
+# Summarise and put in table
+fit_imputed <- fits_pool %>%                                  
+  fit2df(estimate_name = "OR (multiple imputation)", exp = TRUE)
+
+# Use finalfit merge methods to create and compare results
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type","smoking_status")
+
+table_uni_multi <- stroke_testing %>% 
+  finalfit(dependent, explanatory, keep_fit_id = TRUE) 
+
+explanatory = c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married","work_type","residence_type")
+
+fit_multi_no_smoking_status <- stroke_testing %>% 
+  glmmulti(dependent, explanatory) %>% 
+  fit2df(estimate_suffix = " (multivariable without Smoking Status)") 
+
+# Combine to final table
+table_imputed <- 
+  table_uni_multi %>% 
+  ff_merge(fit_multi_no_smoking_status) %>% 
+  ff_merge(fit_imputed, last_merge = TRUE)
+
+table_imputed 
+```
+
+
+#### Generating Data & Adding Imputed Values to stroke_testing 
+
+```{r doing mice again to save and extract the data}
+
+explanatory <- c("id","bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status")
+dependent <- "stroke_yn"
+
+stroke_testing %>% 
+  select(dependent, explanatory) %>% 
+  missing_predictorMatrix(
+  drop_from_imputed = c("gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","stroke_yn","id"),
+    drop_from_imputer = c("gender","ever_married","residence_type","id")
+  ) -> predM
+
+fits <- stroke_testing %>%
+select(dependent, explanatory) %>%
+mice(m = 10, predictorMatrix = predM)
+
+
+completedData <- complete(fits, action = 1)
+
+```
+
+
+```{r scatterplot of original and imputed data bmi vs age}
+#scatter plot of original and imputed data with the magenta points being the imputed data points and the blue points being the observed values#
+
+xyplot(fits,bmi ~ age,pch=18,cex=1)
+
+```
+
+```{r density plot of observed and imputed values for smoking status}
+# Convert your factor variable to a factor with appropriate levels
+fits$data$smoking_status <- factor(fits$data$smoking_status)
+
+# Now, create the density plot again with factor levels on the x-axis
+densityplot(fits, 
+            ~ smoking_status,                     # Factor variable with levels
+            main = "Density of Observed and Imputed Values for Smoking Status",
+            xlab = "Smoking Status",               # Custom x-axis label
+            scales = list(x = list(at = 1:length(levels(fits$data$smoking_status)), 
+                                   labels = levels(fits$data$smoking_status))))
+```
+
+The above is a scatter plot of original and imputed data with the magenta points 
+being the imputed data points and the blue points being the observed values. 
+The matching shape is a good verification of the imputed values indeed being 
+plausible.
+
+```{r density plot of observed and imputed values for bmi}
+densityplot(fits, 
+            ~ bmi,                     # Factor variable with levels
+            main = "Density of Observed and Imputed Values for BMI",
+            xlab = "BMI")
+```
+
+The density of the imputed data for each imputed dataset is magenta and
+the density of the observed data is blue. Again, we expect the
+distributions to be similar.
+
+```{r extracting id and bmi and limiting to just ids wo valid bmi}
+
+ids_wo_bmi <- stroke_testing %>% filter(is.na(bmi))
+
+ids_wo_bmi <- ids_wo_bmi$id
+
+imputed_bmi_values <- completedData %>% select(id, bmi)
+
+imputed_bmi_values <- imputed_bmi_values %>% filter(id %in% ids_wo_bmi)
+
+```
+
+```{r adding imputed bmi values back to stroke data df}
+
+stroke_testing <- stroke_testing %>%
+  left_join(imputed_bmi_values, by = "id", suffix = c("", ".new")) %>%
+  mutate(bmi = coalesce(bmi, bmi.new)) %>%
+  select(-bmi.new)
+
+```
+
+```{r extracting id and smoking status and limiting to just ids wo valid smoking status}
+
+ids_wo_smoking_status <- stroke_testing %>% filter(is.na(smoking_status))
+
+ids_wo_smoking_status  <- ids_wo_smoking_status$id
+
+imputed_smoking_status_values <- completedData %>% select(id, smoking_status)
+
+imputed_smoking_status_values <- imputed_smoking_status_values %>% filter(id %in% ids_wo_smoking_status)
+
+```
+
+```{r adding imputed smoking_status values back to stroke data df}
+
+stroke_testing <- stroke_testing %>%
+  left_join(imputed_smoking_status_values, by = "id", suffix = c("", ".new")) %>%
+  mutate(smoking_status = coalesce(smoking_status, smoking_status.new)) %>%
+  select(-smoking_status.new)
+
+```
+
+```{r redoing the bmi category variable based on imputed data}
+
+stroke_testing <- stroke_testing %>% mutate(
+  
+  # Create BMI categories
+  bmi_category = case_when(
+    bmi < 18.5 ~ "Underweight",
+    bmi >= 18.5 & bmi <= 24.9 ~ "Normal weight",
+    bmi >= 25 & bmi <= 29.9 ~ "Overweight",
+    bmi >= 30 ~ "Obese",
+    TRUE ~ NA_character_
+  ) %>% factor(levels = c("Normal weight", "Underweight", "Overweight", "Obese"))
+  
+)
+  
+```
+
+```{r double check missingness has been sorted in testing data}
+
+stroke_testing <- stroke_testing %>%
+mutate(across(where(is.factor),droplevels))
+
+ff_glimpse(stroke_testing)
+
+```
+
+
+```{r missing values plot for testing data}
+
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","age_category")
+dependent <- "stroke_yn"
+
+ stroke_testing %>% 
+  missing_plot(dependent, explanatory, title = "Missingness for testing Data")
+ 
+```
+
+
+```{r looking for patterns of missingness in the testing data}
+
+stroke_testing %>% 
+  missing_pattern(dependent, explanatory)
+
+```
+
+```{r recombining the training and testing data for a full df for descriptives}
+
+stroke_data <- rbind(stroke_training, stroke_testing)
+
+
+```
+
+
+```{r missing values plot for stroke data df}
+
+explanatory <- c("bmi","gender","age","hypertension_yn","heart_disease_yn","ever_married",
+                 "work_type","residence_type","smoking_status","age_category")
+dependent <- "stroke_yn"
+
+ stroke_data %>% 
+  missing_plot(dependent, explanatory, title = "Missingness for stoke_data df")
+ 
+```
+
+
+```{r looking for patterns of missingness in the data data}
+
+stroke_data %>% 
+  missing_pattern(dependent, explanatory)
+
+```
+
+
+## Exploratory Data Analysis - Summary Statistics {.tabset .tabset-fade .tabset-pills}
+
+```{r reorder factor variable levels, echo=FALSE}
+
+#work type#
+
+stroke_data$work_type <- factor(stroke_data$work_type , levels = c("Private", "Govt_job", "Self-employed")) %>% relevel(ref = "Private")
+
+levels(stroke_data$work_type)
+
+#smoking status#
+
+stroke_data$smoking_status <- factor(stroke_data$smoking_status , levels = c("never smoked", "formerly smoked", "smokes")) %>% relevel(ref = "never smoked")
+
+levels(stroke_data$smoking_status)
+
+#residence type#
+
+stroke_data$residence_type <- factor(stroke_data$residence_type , levels = c("Urban", "Rural"))
+
+levels(stroke_data$residence_type)
+
+```
+
+### Age
+
+```{r removing child age category}
+#dropping children from age category#
+
+stroke_data$age_category <- droplevels(stroke_data$age_category)
+
+summary(stroke_data$age_category)
+
+```
+
+Summary statistics for age -
+
+```{r summary statistics for the age variable}
+
+summary(stroke_data$age)
+
+```
+
+-   From the summary statistics we see that the mean and median are 50.2
+    years and 50.5 years respectively. This is an indication of the age
+    variable being normally distributed.
+
+-   The minimum age is 18 as per the earlier filtering removing all
+    children. The maximum age of a patient is 82.
+
+```{r counting the numbers and proportions of patients in the three different age categories}
+age_counts <- stroke_data %>%
+  group_by(age_category) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+        percentage = signif(percentage, 3)) %>%
+  arrange(age_category)
+
+age_counts_table <- age_counts %>% rename("Percentage (%)" = percentage) %>% rename(
+"No.Patients" = patient_count) %>% rename("Age Category" = age_category)
+
+flextable(age_counts_table)
+
+```
+
+```{r plotting distribution of patients across age categories}
+
+ggplot(age_counts, aes(x = age_category, y = patient_count)) +
+  geom_col(fill = "blue", alpha = 0.8) +
+  geom_text(aes(label = patient_count), vjust = -0.5, size = 3.5, color = "darkblue") +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Number of Patients by Age Category",
+       x = "Age Category",
+       y = "Number of Patients") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major = element_line(size = 0.1, linetype = 'dotted'),
+    panel.grid.minor = element_blank()
+  ) 
+
+```
+
+The above bar chart is further confirmation that the age variable is
+indeed normally distributed.
+
+```{r making an age counts table stratified by stroke yes or no}
+age_counts_w_stroke <- stroke_data %>%
+  group_by(age_category,stroke_yn) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+                 percentage = signif(percentage, 3)) %>%
+  arrange(age_category)
+
+age_counts_w_stroke_table <- age_counts_w_stroke %>% rename("Percentage (%)" = percentage) %>% rename(
+"No.Patients" = patient_count) %>% rename("Age Category" = age_category) %>% rename("Stroke (Yes/No)" = stroke_yn)
+
+flextable(age_counts_w_stroke_table)
+```
+
+The table above displaying the no.patients in each age category
+stratified by those having or not having a stroke shows that the
+no.patients having a stroke is heavily skewed towards the oldest age
+category. 13.6% of patients in the \>60 age category had a stroke, 3.62%
+of patients in the 36-60 age category had a stroke, and just 1
+patients/0.0959% of patients in the 18-35 age category had a stroke.
+
+```{r plotting distribution of patients across age and stroke categories}
+
+ggplot(age_counts_w_stroke, aes(x = age_category, y = patient_count, fill = stroke_yn)) +
+  geom_col(position = "dodge", alpha = 0.8) +
+  geom_text(aes(label = patient_count), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5, size = 3.5) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Number of Patients by Age Category and Stroke Status",
+       x = "Age Category",
+       y = "Number of Patients",
+       fill = "Stroke") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major = element_line(size = 0.1, linetype = 'dotted'),
+    panel.grid.minor = element_blank()
+  )
+
+```
+
+### BMI
+
+Summary statistics for BMI -
+
+```{r summary statistics for the bmi variable}
+
+#summary statistics for bmi#
+
+summary(stroke_data$bmi)
+
+```
+
+-   From the summary statistics we see that the mean and median BMIs are
+    29.2 and 30.4 respectively. This is an indication of the BMI
+    variable being normally distributed. The maximum and minimum BMI
+    values of 11.3 and 92 are way beyond any conceivable measurements
+    and so may be outliers that need to be removed. There are 181 NAs
+    out of 4,254 observations.
+
+```{r counting the numbers and proportions of patients in the four different bmi categories}
+bmi_counts <- stroke_data %>%
+  group_by(bmi_category) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+        percentage = signif(percentage, 3)) %>%
+  arrange(bmi_category)
+
+bmi_counts_table <- bmi_counts %>% rename("Percentage (%)" = percentage) %>% rename(
+"No.Patients" = patient_count) %>% rename("BMI Category" = bmi_category)
+
+flextable(bmi_counts_table)
+
+```
+
+The above table shows that this dataset has the vast majority of
+patients as overweight and obese, with only 20.3% at a normal, healthy
+BMI.
+
+```{r plotting distribution of patients across bmi categories}
+#Code to remove NAs from bmi_counts#
+
+bmi_counts <- bmi_counts %>% filter(!is.na(bmi_category))
+
+
+ggplot(bmi_counts, aes(x = bmi_category, y = patient_count)) +
+  geom_col(fill = "blue", alpha = 0.8) +
+  geom_text(aes(label = patient_count), vjust = -0.5, size = 3.5, color = "darkblue") +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Number of Patients by BMI Category",
+       x = "BMI Category",
+       y = "Number of Patients") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major = element_line(size = 0.1, linetype = 'dotted'),
+    panel.grid.minor = element_blank()
+  ) 
+
+```
+
+The distribution of patients is left skewed towards the 'Overweight' and
+'Obese' categories.
+
+```{r making an bmi counts table stratified by stroke yes or no}
+bmi_counts_w_stroke <- stroke_data %>%
+  group_by(bmi_category,stroke_yn) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+                 percentage = signif(percentage, 3)) %>%
+  arrange(bmi_category)
+
+bmi_counts_w_stroke_table <- bmi_counts_w_stroke %>% rename("Percentage (%)" = percentage) %>% rename(
+"No.Patients" = patient_count) %>% rename("BMI Category" = bmi_category) %>% rename("Stroke (Yes/No)" = stroke_yn)
+
+flextable(bmi_counts_w_stroke_table)
+```
+
+The above summary table shows the percentage of patients having a stroke
+is higher in the 'Overweight' and 'Obese' BMI categories than in the
+'Normal Weight' and 'Underweight' categories.
+
+```{r plotting distribution of patients across bmi and stroke categories}
+
+bmi_counts_w_stroke <- bmi_counts_w_stroke %>% filter(!is.na(bmi_category))
+
+ggplot(bmi_counts_w_stroke, aes(x = bmi_category, y = patient_count, fill = stroke_yn)) +
+  geom_col(position = "dodge", alpha = 0.8) +
+  geom_text(aes(label = patient_count), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5, size = 3.5) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Number of Patients by BMI Category and Stroke Status",
+       x = "BMI Category",
+       y = "Number of Patients",
+       fill = "Stroke") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major = element_line(size = 0.1, linetype = 'dotted'),
+    panel.grid.minor = element_blank()
+  )
+
+```
+
+There is a higher rate of stroke associated with the 'Overweight' and
+'Obese' BMI categories but perhaps not a significant level.
+
+### Gender
+
+```{r counting the numbers and proportions of patients by gender}
+gender_counts <- stroke_data %>%
+  group_by(gender) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+        percentage = signif(percentage, 3)) %>%
+  arrange(gender)
+
+gender_counts_table <- gender_counts %>% rename("Percentage (%)" = percentage) %>% rename(
+"No.Patients" = patient_count) %>% rename("Gender" = gender)
+
+flextable(gender_counts_table)
+
+```
+
+The cohort is majority female at 60.6% and 39.4% male. One patient is
+marked as 'other'. It is unclear what this means - an input mistake,
+transgender? To not disturb any other modelling, this patient is
+removed.
+
+```{r removing the one patient who has gender as other}
+
+stroke_data <- stroke_data %>% filter(gender == "Male" | gender == "Female")
+
+```
+
+```{r plotting distribution of patients across the genders}
+#redoing gender counts to reflect removed 'other' patient'
+gender_counts <- stroke_data %>%
+  group_by(gender) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+        percentage = signif(percentage, 3)) %>%
+  arrange(gender)
+
+ggplot(gender_counts, aes(x = gender, y = patient_count)) +
+  geom_col(fill = "blue", alpha = 0.8) +
+  geom_text(aes(label = patient_count), vjust = -0.5, size = 3.5, color = "darkblue") +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Number of Patients by Gender",
+       x = "Gender",
+       y = "Number of Patients") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major = element_line(size = 0.1, linetype = 'dotted'),
+    panel.grid.minor = element_blank()
+  ) 
+
+```
+
+```{r making a gender counts table stratified by stroke yes or no}
+gender_counts_w_stroke <- stroke_data %>%
+  group_by(gender,stroke_yn) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+                 percentage = signif(percentage, 3)) %>%
+  arrange(gender)
+
+gender_counts_w_stroke_table <- gender_counts_w_stroke %>% rename("Percentage (%)" = percentage) %>% rename(
+"No.Patients" = patient_count) %>% rename("Gender" = gender) %>% rename("Stroke (Yes/No)" = stroke_yn)
+
+flextable(gender_counts_w_stroke_table)
+```
+
+Interestingly, whilst there are many more female than male patients, the
+rate of stroke between the 2 genders stays consistent. 5.4% (139) of
+females experienced stroke and 6.44% (108) of males experienced stroke.
+
+```{r plotting distribution of patients across gender and stroke categories}
+ggplot(gender_counts_w_stroke, aes(x = gender, y = patient_count, fill = stroke_yn)) +
+  geom_col(position = "dodge", alpha = 0.8) +
+  geom_text(aes(label = patient_count), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5, size = 3.5) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Number of Patients by Gender and Stroke Status",
+       x = "Gender",
+       y = "Number of Patients",
+       fill = "Stroke") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major = element_line(size = 0.1, linetype = 'dotted'),
+    panel.grid.minor = element_blank()
+  )
+
+```
+
+### Marriage
+
+```{r counting the numbers and proportions of patients by marriage}
+ever_married_counts <- stroke_data %>%
+  group_by(ever_married) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+        percentage = signif(percentage, 3)) %>%
+  arrange(ever_married)
+
+ever_married_counts_table <- ever_married_counts %>% rename("Percentage (%)" = percentage) %>% rename(
+"No.Patients" = patient_count) %>% rename("Marriage?" = ever_married)
+
+flextable(ever_married_counts_table)
+
+```
+
+```{r plotting distribution of patients across by marriage}
+
+ggplot(ever_married_counts, aes(x = ever_married, y = patient_count)) +
+  geom_col(fill = "blue", alpha = 0.8) +
+  geom_text(aes(label = patient_count), vjust = -0.5, size = 3.5, color = "darkblue") +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Number of Patients by Marriage",
+       x = "Ever Married?",
+       y = "Number of Patients") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major = element_line(size = 0.1, linetype = 'dotted'),
+    panel.grid.minor = element_blank()
+  ) 
+
+```
+
+```{r making a marriage counts table stratified by stroke yes or no}
+ever_married_counts_w_stroke <- stroke_data %>%
+  group_by(ever_married,stroke_yn) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+                 percentage = signif(percentage, 3)) %>%
+  arrange(ever_married)
+
+ever_married_counts_w_stroke_table <- ever_married_counts_w_stroke %>% rename("Percentage (%)" = percentage) %>% rename("No.Patients" = patient_count) %>% rename("Ever Married?" = ever_married) %>% rename("Stroke (Yes/No)" = stroke_yn)
+
+flextable(ever_married_counts_w_stroke_table)
+```
+
+The above table shows that the proportion of those patients experiencing
+stroke who had ever married (6.56%) was more than twice as much as the
+proportion of patients experiencing stroke who had never married (3%).
+
+```{r plotting distribution of patients across marriage and stroke categories}
+ggplot(ever_married_counts_w_stroke, aes(x = ever_married, y = patient_count, fill = stroke_yn)) +
+  geom_col(position = "dodge", alpha = 0.8) +
+  geom_text(aes(label = patient_count), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5, size = 3.5) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Number of Patients by Marriage Status and Stroke Status",
+       x = "Ever Married(?)",
+       y = "Number of Patients",
+       fill = "Stroke") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major = element_line(size = 0.1, linetype = 'dotted'),
+    panel.grid.minor = element_blank()
+  )
+
+```
+
+### Hypertension
+
+```{r counting the numbers and proportions of patients by hypertension}
+hypertension_counts <- stroke_data %>%
+  group_by(hypertension_yn) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+        percentage = signif(percentage, 3)) %>%
+  arrange(hypertension_yn)
+
+hypertension_counts_table <- hypertension_counts %>% rename("Percentage (%)" = percentage) %>% rename(
+"No.Patients" = patient_count) %>% rename("Hypertension?" = hypertension_yn)
+
+flextable(hypertension_counts_table)
+
+```
+
+```{r plotting distribution of patients across by hypertension}
+
+ggplot(hypertension_counts, aes(x = hypertension_yn, y = patient_count)) +
+  geom_col(fill = "blue", alpha = 0.8) +
+  geom_text(aes(label = patient_count), vjust = -0.5, size = 3.5, color = "darkblue") +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Number of Patients by Hypertension",
+       x = "Hypertension?",
+       y = "Number of Patients") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major = element_line(size = 0.1, linetype = 'dotted'),
+    panel.grid.minor = element_blank()
+  ) 
+
+```
+
+```{r making a hypertension counts table stratified by stroke yes or no}
+hypertension_counts_w_stroke <- stroke_data %>%
+  group_by(hypertension_yn,stroke_yn) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+                 percentage = signif(percentage, 3)) %>%
+  arrange(hypertension_yn)
+
+hypertension_counts_w_stroke_table <- hypertension_counts_w_stroke %>% rename("Percentage (%)" = percentage) %>% rename("No.Patients" = patient_count) %>% rename("Hypertension?" = hypertension_yn) %>% rename("Stroke (Yes/No)" = stroke_yn)
+
+flextable(hypertension_counts_w_stroke_table)
+```
+
+```{r plotting distribution of patients across hypertension and stroke categories}
+ggplot(hypertension_counts_w_stroke, aes(x = hypertension_yn, y = patient_count, fill = stroke_yn)) +
+  geom_col(position = "dodge", alpha = 0.8) +
+  geom_text(aes(label = patient_count), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5, size = 3.5) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Number of Patients by Hypertension Status and Stroke Status",
+       x = "Hypertension(?)",
+       y = "Number of Patients",
+       fill = "Stroke") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major = element_line(size = 0.1, linetype = 'dotted'),
+    panel.grid.minor = element_blank()
+  )
+
+```
+
+The proportion of patients with hypertension who had a stroke (13.3%) is
+2.75x higher than the proportion of patients without hypertension who
+had a stroke (4.82%).
+
+### Work Type
+
+```{r counting the numbers and proportions of patients by work type}
+work_counts <- stroke_data %>%
+  group_by(work_type) %>%
+  summarise(patient_count = n()) %>%
+  mutate(percentage = (patient_count / sum(patient_count)) * 100,
+        percentage = signif(percentage, 3)) %>%
+  arrange(work_type)
+
+work_counts_table <- work_counts %>% rename("Percentage (%)" = percentage) %>% rename(
+"No.Patients" = patient_count) %>% rename("Work Type" = work_type)
+
+flextable(work_counts_table)
+
+```
+
+```{r plotting distribution of patients across by work type}
+
+ggplot(work_counts, aes(x = work_type, y = patient_count)) +
+  geom_col(fill = "blue", alpha = 0.8) +
+  geom_text(aes(label = patient_count), vjust = -0.5, size = 3.5, color = "darkblue") +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Number of Patients by Work Type",
+       x = "Work Type",
+       y = "Number of Patients") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title.x = element_text(size = 12, face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold"),
+    axis.text.x = element_text(hjust = 1),
+    panel.grid.major = element_line(size = 0.1, linetype = 'dotted'),
+    panel.grid.minor = element_blank()
+  ) 
+
+```
+
+### Chi-squared & Fisher's Exact Tests
+
+```{r doing ff labels for different variables, echo = FALSE}
+stroke_data$age_category <- stroke_data$age_category %>%
+  ff_label("Age(years)")
+
+stroke_data$bmi_category <- stroke_data$bmi_category %>%
+  ff_label("BMI")
+
+stroke_data$ever_married <- stroke_data$ever_married %>%
+  ff_label("Ever Married?")
+
+stroke_data$gender <- stroke_data$gender %>%
+  ff_label("Gender")
+
+stroke_data$residence_type <- stroke_data$residence_type %>%
+  ff_label("Residence Type")
+
+stroke_data$smoking_status <- stroke_data$smoking_status %>%
+  ff_label("Smoking Status")
+
+stroke_data$work_type <- stroke_data$work_type %>%
+  ff_label("Work Type")
+```
+
+```{r removing underweight bmi category}
+# Recode 'Unknown' to NA in all relevant columns
+stroke_data$bmi_category <- factor(stroke_data$bmi_category) # Ensure smoking_status is a factor
+stroke_data$bmi_category[stroke_data$bmi_category  == "Underweight"] <- NA
+
+# Optionally drop the 'Unknown' level from the factor levels
+stroke_data$bmi_category <- droplevels(stroke_data$bmi_category)
+
+stroke_data$bmi_category <- stroke_data$bmi_category %>%
+  ff_label("BMI")
+```
+
+#### Chi-squared tests
+
+```{r chi squared tests for explanatory variables and stroke}
+ stroke_data %>% 
+  summary_factorlist(dependent = "stroke_yn", 
+                     explanatory = 
+                       c("age_category", "bmi_category","ever_married","gender",
+                         "heart_disease_yn", "hypertension_yn","residence_type",
+                         "smoking_status","work_type"),
+                     p = TRUE) %>%
+     kable("html") %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = FALSE,
+    position = "center"
+  )
+
+
+```
+
+#### Fisher's exact tests
+
+```{r fishers test for explanatory variables and stroke}
+ stroke_data %>% 
+  summary_factorlist(dependent = "stroke_yn", 
+                     explanatory = 
+                       c("age_category", "bmi_category","ever_married","gender",
+                         "heart_disease_yn", "hypertension_yn","residence_type",
+                         "smoking_status","work_type"),
+                     p = TRUE,
+                     p_cat = "fisher") %>%
+     kable("html") %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = TRUE,
+    position = "center"
+  )
+
+
+```
+
+### Facetted Visualisations
+
+```{r stroke outcomes and hypertension statuses facetted by age and gender}
+p1 <- stroke_data %>% 
+  ggplot(aes(x = hypertension_yn, fill=stroke_yn)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) +
+  facet_grid(gender ~ age_category) + 
+  theme(legend.position = "none")
+
+p2 <- stroke_data %>% 
+  ggplot(aes(x = hypertension_yn, fill=stroke_yn)) + 
+  geom_bar(position = position_fill(reverse = TRUE)) +
+  facet_grid(gender ~ age_category)+ 
+  theme(legend.position = "bottom")
+
+p1 / p2
+```
+
+```{r hypertension statuses facetted by stroke}
+p1 <- stroke_data %>% 
+  ggplot(aes(x = hypertension_yn, fill = stroke_yn)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) +
+  labs(
+    x = "Hypertension Status",
+    y = "Number of Patients",
+    fill = "Stroke Status"
+  ) +
+  theme_minimal() +
+  theme(
+    text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 10),
+    legend.position = "none"
+  )
+
+p2 <- stroke_data %>% 
+  ggplot(aes(x = hypertension_yn, fill = stroke_yn)) + 
+  geom_bar(position = position_fill(reverse = TRUE)) + 
+  scale_y_continuous(labels = percent) + # Convert y-axis to percentage
+  labs(
+    x = "Hypertension Status",
+    y = "Proportion (%)",
+    fill = "Stroke Status"
+  ) +
+  theme_minimal() +
+  theme(
+    text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 10),
+    legend.position = "right"
+  )
+
+p1 + p2
+```
+
+```{r ages facetted by stroke}
+p1 <- stroke_data %>% 
+  ggplot(aes(x = age_category, fill = stroke_yn)) + 
+  geom_bar(position = position_stack(reverse = TRUE)) +
+  labs(
+    x = "Age Category",
+    y = "Number of Patients",
+    fill = "Stroke Status"
+  ) +
+  theme_minimal() +
+  theme(
+    text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 10),
+    legend.position = "none"
+  )
+
+p2 <- stroke_data %>% 
+  ggplot(aes(x = age_category, fill = stroke_yn)) + 
+  geom_bar(position = position_fill(reverse = TRUE)) + 
+  scale_y_continuous(labels = percent) + # Convert y-axis to percentage
+  labs(
+    x = "Age Category",
+    y = "Proportion (%)",
+    fill = "Stroke Status"
+  ) +
+  theme_minimal() +
+  theme(
+    text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 10),
+    legend.position = "right"
+  )
+
+p1 + p2
+```
+
+## Survival Analysis {.tabset .tabset-fade .tabset-pills}
+
+```{r rounding numeric time columns, echo=FALSE}
+stroke_data$follow_up_time_days <- round(stroke_data$follow_up_time_days, 0)
+
+stroke_data$follow_up_years <- round(stroke_data$follow_up_years, 2)
+```
+
+```{r creating a survival curve using the KM method, echo=FALSE}
+
+fit_stroke <- survfit(Surv(follow_up_years, status) ~ 1, data = stroke_data)
+
+str(fit_stroke)
+```
+
+### Overall Survival
+
+```{r visualising survival for all subjects}
+ggsurvplot(
+  fit_stroke,
+  xlim = c(0, 5),
+  ylim = c(0.7, 1),
+  break.time.by = 1,
+  xlab = "Years since Study Start",
+  ylab = "Survival Probability",
+  pval = TRUE,
+  ggtheme = theme_minimal() + theme(
+    panel.grid.major = element_blank(), # Remove major grid lines
+    panel.grid.minor = element_blank(), # Remove minor grid lines
+    panel.background = element_blank(), # Remove panel background
+    plot.background = element_blank(),  # Remove plot background
+    axis.line = element_line(color = "black"), # Keep axis lines
+    axis.title = element_text(size = 14), # Increase axis title size
+    axis.text = element_text(size = 12),  # Increase axis text size
+    legend.text = element_text(size = 15), # Increase legend text size
+    legend.title = element_text(size = 20), # Increase legend title size
+    plot.title = element_text(size = 20), # Increase plot title size
+    plot.subtitle = element_text(size = 13), # Increase plot subtitle size
+    legend.key.size = unit(1, "lines")      # Adjust legend key size
+  ),
+  risk.table = TRUE,
+  risk.table.y.text.col = TRUE,
+  risk.table.height = 0.2,                 # Slightly increase height of risk table
+  risk.table.y.text = TRUE,
+  conf.int = TRUE,
+  cumcensor = FALSE,
+  conf.int.style = "step",
+  risk.table.fontsize = 4,                 # Reduce risk table font size
+  risk.table.title = "Subjects at Risk",   # Set risk table title
+  tables.theme = theme_minimal() + theme(
+    axis.text.x = element_text(size = 12), # Adjust x-axis text in risk table
+    axis.text.y = element_text(size = 12)  # Adjust y-axis text in risk table
+  )
+)
+
+
+```
+
+```{r estimating 3 year survival}
+
+summary(survfit(Surv(follow_up_years, status) ~ 1, data = stroke_data), times = 5)
+
+```
+
+```{r estimating 3 year survival rate table}
+survfit(Surv(follow_up_years, status) ~ 1, data = stroke_data) %>% 
+  tbl_survfit(
+    times = 3,
+    label_header = "**5-year survival (95% CI)**"
+  )
+
+
+```
+
+```{r estimating the median survival time}
+stroke_data %>% 
+  filter(status == 1) %>% 
+  summarize(median_surv = median(follow_up_years))
+```
+
+### Smoking Status
+
+```{r comparing survival time for smoking status, echo=FALSE}
+
+survfit(Surv(follow_up_years, status) ~ smoking_status, data = stroke_data)
+
+fit_smoking <- survfit(Surv(follow_up_years, status) ~ smoking_status, data = stroke_data)
+```
+
+```{r survival curve for smoking,fig.width=11.5,fig.height=5.3,fig.align = 'center'}
+
+legend_labels <- c("never smoked", "formerly smoked", "smokes")
+
+ggsurvplot(
+  fit_smoking,
+  xlim = c(0, 5),
+  ylim = c(0.7, 1),
+  break.time.by = 1,
+  xlab = "Years since Study Start",
+  ylab = "Survival Probability",
+  pval = TRUE,
+  ggtheme = theme_minimal() + theme(
+                  panel.grid.major = element_blank(), # Remove major grid lines
+                  panel.grid.minor = element_blank(), # Remove minor grid lines
+                  panel.background = element_blank(), # Remove panel background
+                  plot.background = element_blank(),  # Remove plot background
+                  axis.line = element_line(color = "black"), # Keep axis lines if desired
+                  axis.title = element_text(size = 13), # Increase axis title size
+                  axis.text = element_text(size = 11),  # Increase axis text size
+                  legend.text = element_text(size = 13), # Increase legend text size
+                  legend.title = element_text(size = 16), # Increase legend title size
+                  plot.title = element_text(size = 14), # Increase plot title size
+                  plot.subtitle = element_text(size = 13), # Increase plot subtitle size
+                  legend.key.size = unit(1.5, "lines") # Increase legend key size
+                ),
+           risk.table = TRUE,
+           risk.table.y.text.col = TRUE,
+           risk.table.height = 0.35,
+           risk.table.y.text = FALSE,
+           conf.int = TRUE, cumcensor = FALSE, conf.int.style = "step",pval.coord = c(0, 0.76), pval.method = TRUE, pval.method.coord = c(0, 0.72),
+           legend.labs = legend_labels,
+           legend.title = "Smoking Status",pval.size = 5, pval.method.size = 5 # Set legend title
+             #font.x = c(0, "plain", "white") # Removes x-axis text from KM plot
+
+)
+```
+
+Quantifying the effect size for multiple variables using Cox Regression
+-
+
+Some key assumptions of the model:
+
+-   non-informative censoring
+-   proportional hazards
+
+```{r calculating the HR of smoking status}
+coxph(Surv(follow_up_years, status) ~ smoking_status, data = stroke_data) %>% 
+  tbl_regression(exp = TRUE) 
+```
+
+### Age
+
+```{r comparing survival time for age categories, echo=FALSE}
+
+survfit(Surv(follow_up_years, status) ~ age_category, data = stroke_data)
+
+fit_age <- survfit(Surv(follow_up_years, status) ~ age_category, data = stroke_data)
+```
+
+```{r survival curve for age categories,fig.width=11.5,fig.height=5.3,fig.align = 'center'}
+legend_labels <- c("<60","60-69","70-79",">80")
+
+ggsurvplot(
+  fit_age,
+  xlim = c(0, 5),
+  ylim = c(0.7, 1),
+  break.time.by = 1,
+  xlab = "Years since Study Start",
+  ylab = "Survival Probability",
+  pval = TRUE,
+  ggtheme = theme_minimal() + theme(
+                  panel.grid.major = element_blank(), # Remove major grid lines
+                  panel.grid.minor = element_blank(), # Remove minor grid lines
+                  panel.background = element_blank(), # Remove panel background
+                  plot.background = element_blank(),  # Remove plot background
+                  axis.line = element_line(color = "black"), # Keep axis lines if desired
+                  axis.title = element_text(size = 13), # Increase axis title size
+                  axis.text = element_text(size = 11),  # Increase axis text size
+                  legend.text = element_text(size = 13), # Increase legend text size
+                  legend.title = element_text(size = 16), # Increase legend title size
+                  plot.title = element_text(size = 14), # Increase plot title size
+                  plot.subtitle = element_text(size = 13), # Increase plot subtitle size
+                  legend.key.size = unit(1.5, "lines") # Increase legend key size
+                ),
+           risk.table = TRUE,
+           risk.table.y.text.col = TRUE,
+           risk.table.height = 0.35,
+           risk.table.y.text = FALSE,
+           conf.int = TRUE, cumcensor = FALSE, conf.int.style = "step",pval.coord = c(0, 0.76), pval.method = TRUE, pval.method.coord = c(0, 0.72),
+           legend.labs = legend_labels,
+           legend.title = "Age Category",pval.size = 5, pval.method.size = 5 # Set legend title
+
+)
+```
+
+```{r calculating the HR of age categories}
+coxph(Surv(follow_up_years, status) ~ age_category, data = stroke_data) %>% 
+  tbl_regression(exp = TRUE) 
+```
+
+### Gender
+
+```{r comparing survival time for gender, echo=FALSE}
+
+survfit(Surv(follow_up_years, status) ~ gender, data = stroke_data)
+
+fit_gender <- survfit(Surv(follow_up_years, status) ~ gender, data = stroke_data)
+```
+
+```{r survival curve for gender categories,fig.width=11.5,fig.height=5.3,fig.align = 'center'}
+legend_labels <- c("Female", "Male")
+
+ggsurvplot(
+  fit_gender,
+  xlim = c(0, 5),
+  ylim = c(0.7, 1),
+  break.time.by = 1,
+  xlab = "Years since Study Start",
+  ylab = "Survival Probability",
+  pval = TRUE,
+  ggtheme = theme_minimal() + theme(
+                  panel.grid.major = element_blank(), # Remove major grid lines
+                  panel.grid.minor = element_blank(), # Remove minor grid lines
+                  panel.background = element_blank(), # Remove panel background
+                  plot.background = element_blank(),  # Remove plot background
+                  axis.line = element_line(color = "black"), # Keep axis lines if desired
+                  axis.title = element_text(size = 13), # Increase axis title size
+                  axis.text = element_text(size = 11),  # Increase axis text size
+                  legend.text = element_text(size = 13), # Increase legend text size
+                  legend.title = element_text(size = 16), # Increase legend title size
+                  plot.title = element_text(size = 14), # Increase plot title size
+                  plot.subtitle = element_text(size = 13), # Increase plot subtitle size
+                  legend.key.size = unit(1.5, "lines") # Increase legend key size
+                ),
+           risk.table = TRUE,
+           risk.table.y.text.col = TRUE,
+           risk.table.height = 0.35,
+           risk.table.y.text = FALSE,
+           conf.int = TRUE, cumcensor = FALSE, conf.int.style = "step",pval.coord = c(0, 0.76), pval.method = TRUE, pval.method.coord = c(0, 0.72),
+           legend.labs = legend_labels,
+           legend.title = "Gender",pval.size = 5, pval.method.size = 5 # Set legend title
+
+)
+```
+
+```{r calculating the HR of gender categories}
+coxph(Surv(follow_up_years, status) ~ gender, data = stroke_data) %>% 
+  tbl_regression(exp = TRUE) 
+```
+
+### Cox Regression {.tabset .tabset-fade .tabset-pills}
+
+#### Model 1 - All explanatory variables
+
+```{r Model 1 with all relevant explanatory variables}
+dependent = "Surv(follow_up_years, stroke)"
+dependent_label = "Strokes over 5 Years"
+
+vars_multi = c("age_category", "bmi_category","ever_married","gender",
+                         "heart_disease_yn", "hypertension_yn","residence_type",
+                         "smoking_status","work_type")
+
+
+tab = stroke_data %>% 
+  finalfit(dependent, vars_multi, metrics = TRUE, add_dependent_label = FALSE) 
+
+
+mykable = function(x){
+    knitr::kable(x, row.names = FALSE, align = c("l", "l", "r", "r", "r", "r", "r", "r", "r"))
+}
+
+# data manipulation and kable code
+ result <- tab[[1]] %>%
+  rename(!!{{ dependent_label }} := label) %>%
+  rename(" " = levels) %>%
+  rename("  " = all)
+
+# Apply mykable to the result
+ mykable(result)
+
+ tab[[1]] %>%
+   rename({{dependent_label}} := label) %>%
+   rename(" " = levels) %>%
+   rename("  " = all) %>%
+   mykable()
+```
+
+```{r model 1 HR plot, warning=FALSE, message=FALSE, include = TRUE, echo = FALSE,fig.width=10,fig.height=5,fig.align = 'center'}
+
+stroke_data %>% 
+  hr_plot(dependent, vars_multi,
+          breaks = c(0.03,0.1,0.3,1,3,10),
+          remove_ref = TRUE,
+          column_space = c(-1,0,0.75),
+          table_text_size = 3,
+          title_text_size = 16,
+          dependent_label = dependent_label) 
+
+tab[[2]] %>% knitr::kable()
+
+
+```
+
+Key takeaways from Model 1:
+
+-   A good concordance/C-statistic. This indicates how well the model
+    predicts the order of events. A value of 0.747 means that in 74.7%
+    of the cases, the model correctly predicts that a patient who had a
+    stroke earlier was at higher risk than a patient who did not or had
+    the event later. Values range from 0.5 (no better than random
+    guessing) to 1.0 (perfect prediction). The model's concordance is
+    reasonably good.
+
+-   R-squared measures how much of the variability in (stroke
+    occurrence) is explained by the model. Here, your model explains
+    4.8% of the variability in stroke risk. The max possible R-squared
+    of 0.576 represents the theoretical upper bound if the model
+    perfectly explained the outcome variance. This low R-squared is
+    likely attributable to the random generation of follow-up times -
+    not real data!
+
+-   The likelihood ratio test compares the model to a null model (with
+    no predictors). A high test statistic with a very low p-value (p =
+    0.000) indicates that the model significantly improves the fit
+    compared to the null model. This confirms that the predictors
+    collectively contribute to explaining stroke risk.
+
+-   With 247 events out of 4253 individuals, the model has a moderate
+    number of events to estimate the relationships. The concordance SE
+    of 0.018 shows a relatively tight estimate of the concordance,
+    suggesting reliable ranking performance.
+
+#### Model 2 - BMI and 'Work Type' excluded
+
+```{r model 2 wo bmi or work type}
+dependent = "Surv(follow_up_years, stroke)"
+dependent_label = "Strokes over 5 Years"
+
+vars_multi = c("age_category","ever_married","heart_disease_yn", "hypertension_yn",
+               "residence_type","smoking_status")
+
+
+tab = stroke_data %>% 
+  finalfit(dependent, vars_multi, metrics = TRUE, add_dependent_label = FALSE) 
+
+
+mykable = function(x){
+    knitr::kable(x, row.names = FALSE, align = c("l", "l", "r", "r", "r", "r", "r", "r", "r"))
+}
+
+# Your data manipulation and kable code
+ result <- tab[[1]] %>%
+  rename(!!{{ dependent_label }} := label) %>%
+  rename(" " = levels) %>%
+  rename("  " = all)
+
+# Apply mykable to the result
+ mykable(result)
+
+ tab[[1]] %>%
+   rename({{dependent_label}} := label) %>%
+   rename(" " = levels) %>%
+   rename("  " = all) %>%
+   mykable()
+```
+
+```{r model 2 HR plot, warning=FALSE, message=FALSE, include = TRUE, echo = FALSE,fig.width=10,fig.height=5,fig.align = 'center'}
+
+stroke_data %>% 
+  hr_plot(dependent, vars_multi,
+          breaks = c(0.03,0.1,0.3,1,3,10),
+          remove_ref = TRUE,
+          column_space = c(-1,0,0.75),
+          table_text_size = 3,
+          title_text_size = 16,
+          dependent_label = dependent_label) 
+
+tab[[2]] %>% knitr::kable()
+
+
+```
+
+#### Model 3 - Only Statistically Significant Variables
+
+```{r model 3 with only statistically significant variables}
+dependent = "Surv(follow_up_years, stroke)"
+dependent_label = "Strokes over 5 Years"
+
+vars_multi = c("age_category","heart_disease_yn", "hypertension_yn",
+               "smoking_status")
+
+
+tab = stroke_data %>% 
+  finalfit(dependent, vars_multi, metrics = TRUE, add_dependent_label = FALSE) 
+
+
+mykable = function(x){
+    knitr::kable(x, row.names = FALSE, align = c("l", "l", "r", "r", "r", "r", "r", "r", "r"))
+}
+
+# Your data manipulation and kable code
+ result <- tab[[1]] %>%
+  rename(!!{{ dependent_label }} := label) %>%
+  rename(" " = levels) %>%
+  rename("  " = all)
+
+# Apply mykable to the result
+ mykable(result)
+
+ tab[[1]] %>%
+   rename({{dependent_label}} := label) %>%
+   rename(" " = levels) %>%
+   rename("  " = all) %>%
+   mykable()
+```
+
+```{r model 3 HR plot, warning=FALSE, message=FALSE, include = TRUE, echo = FALSE,fig.width=10,fig.height=5,fig.align = 'center'}
+
+stroke_data %>% 
+  hr_plot(dependent, vars_multi,
+          breaks = c(0.03,0.1,0.3,1,3,10),
+          remove_ref = TRUE,
+          column_space = c(-1,0,0.75),
+          table_text_size = 3,
+          title_text_size = 16,
+          dependent_label = dependent_label) 
+
+tab[[2]] %>% knitr::kable()
+
+
+```
+
+## Prediction Modelling Part 1 {.tabset .tabset-fade .tabset-pills}
+
+### Preprocessing data
+
+```{r removing unecessary variables}
+
+stroke_training <- stroke_training %>% select(-id, -hypertension_yn, -heart_disease_yn,
+                                              -age_category, -bmi_category,-stroke,
+                                              -follow_up_time_days,-follow_up_years,
+                                              -status,-gender,-residence_type)
+
+stroke_testing <- stroke_testing %>% select(-id, -hypertension_yn, -heart_disease_yn,
+                                              -age_category, -bmi_category,-stroke,
+                                            -follow_up_time_days,-follow_up_years,
+                                              -status,-gender,-residence_type)
+```
+
+### Random Forest
+
+```{r Generating and training and RF model on training data}
+# Setting a seed to ensure reproducibility of results
+set.seed(123)
+
+# Create a cross-validation object for 5-fold cross-validation
+stroke_cv <- vfold_cv(stroke_training)
+
+# Define the Random Forest model with tuning parameters (mtry and trees)
+rf_model <-
+  rand_forest() %>%
+  set_args(mtry = tune(), trees = tune()) %>%  # Tuning mtry (number of predictors) and trees (number of trees)
+  set_engine("ranger", importance = "impurity") %>%  # Use ranger engine and calculate importance by impurity
+  set_mode("classification")  # Set the model for classification (binary outcome: stroke or no stroke)
+
+# Specify the recipe for preprocessing (outcome ~ predictors)
+stroke_recipe <-
+  recipe(stroke_yn ~ .,  # Define the formula: outcome is 'stroke_yn', all other columns are predictors
+    data = stroke_training
+  )
+
+# Combine the recipe and model into a workflow
+rf_workflow <- workflow() %>%
+  add_recipe(stroke_recipe) %>%  # Add preprocessing recipe
+  add_model(rf_model)  # Add the random forest model
+
+# Create a grid for hyperparameter tuning: mtry and trees values to explore
+rf_grid <- expand.grid(mtry = c(3, 4, 5), trees = c(500, 1000))
+
+# Set the seed again for reproducibility and perform hyperparameter tuning
+set.seed(125)
+rf_tune_results <- rf_workflow %>%
+  tune_grid(  # Perform grid search cross-validation
+    resamples = stroke_cv,  # Use the 5-fold cross-validation splits created above
+    grid = rf_grid  # Use the parameter grid defined above
+  )
+
+# Collect the performance metrics from the tuning results (e.g., accuracy)
+rf_tune_results %>%
+  collect_metrics()
+
+# Select the best model based on accuracy (higher accuracy is better)
+rf_model_final <- rf_tune_results %>%
+  select_best(metric = "accuracy")  # Select the model with the best accuracy
+
+# Show the best model parameters based on the tuning results
+rf_model_final
+
+# Finalize the workflow with the best model (chosen based on accuracy)
+rf_workflow <- rf_workflow %>%
+  finalize_workflow(rf_model_final)  # Apply the best model to the workflow
+
+# Fit the finalized workflow on the entire training data
+rf_fit <- rf_workflow %>%
+  fit(data = stroke_training)  # Fit the model to the full training data
+
+# Predict the outcomes on the training data
+rf_training_results <- rf_fit %>%
+  predict(new_data = stroke_training) %>%
+  mutate(truth = stroke_training$stroke_yn)  # Add true outcome values (truth) to the predictions
+
+# View the first few rows of the training results
+head(rf_training_results)
+
+# Evaluate the model using R-squared (for classification, it is a pseudo R-squared)
+rsq_rf <- rf_training_results %>%
+  mutate(truth = as.numeric(truth), .pred_class = as.numeric(.pred_class)) %>%
+  rsq(  # Compute R-squared (pseudo R-squared)
+    truth = truth,  # Actual outcomes
+    estimate = .pred_class  # Predicted class outcomes
+  )
+
+# Calculate RMSE (Root Mean Squared Error) on predictions
+rmse_rf <- rf_training_results %>%
+  mutate(truth = as.numeric(truth), .pred_class = as.numeric(.pred_class)) %>%
+  yardstick::rmse(  # Compute RMSE
+    truth = truth,  # Actual outcomes
+    estimate = .pred_class  # Predicted class outcomes
+  )
+
+# Output R-squared and RMSE results
+rsq_rf
+rmse_rf
+
+# Count how many predictions fall into each category (True Positives, False Positives, etc.)
+rf_training_results %>% count(.pred_class, truth)  # Confusion matrix: compare predicted vs. actual
+
+```
+
+```{r Random Forest feature importance}
+
+# Extract feature importance from the fitted random forest model
+importances <- rf_fit %>%
+  extract_fit_parsnip() %>%
+  vip::vi()  # Using the 'vip' package to extract feature importance
+
+# Convert the importances into a dataframe
+forest_importances <- data.frame(Feature = importances$Variable,
+                                 Importance = importances$Importance)
+
+# Calculate standard deviation of feature importance (if needed)
+# Using the 'vip' package, we can retrieve the importance standard errors for the features
+std <- importances$SE  # Standard errors of the importance values
+
+# Add standard deviation to the dataframe
+forest_importances$Std <- std
+
+# View the feature importances with standard errors
+head(forest_importances)
+
+```
+
+```{r testing RF model on testing dataset}
+
+# Predict on the testing dataset
+rf_testing_results <- rf_fit %>%
+  predict(new_data = stroke_testing) %>%  # Generate predictions
+  bind_cols(stroke_testing %>% select(stroke_yn))  # Add the true outcome values for comparison
+
+# View the first few rows of the testing results
+head(rf_testing_results)
+
+# Convert both `truth` and `estimate` to factors with the same levels
+rf_testing_results <- rf_testing_results %>%
+  mutate(
+    stroke_yn = as.factor(stroke_yn),
+    .pred_class = as.factor(.pred_class)
+  )
+
+# Ensure the levels of `truth` and `estimate` match
+levels(rf_testing_results$stroke_yn) <- levels(rf_testing_results$.pred_class)
+
+# Compute confusion matrix
+confusion_matrix <- rf_testing_results %>%
+  conf_mat(truth = stroke_yn, estimate = .pred_class)
+
+# View confusion matrix
+confusion_matrix
+# Calculate other performance metrics
+# Accuracy
+accuracy <- rf_testing_results %>%
+  metrics(truth = stroke_yn, estimate = .pred_class) %>%
+  filter(.metric == "accuracy")
+accuracy
+
+# Precision, Recall, F1 Score
+classification_metrics <- rf_testing_results %>%
+  metrics(truth = stroke_yn, estimate = .pred_class)
+classification_metrics
+
+# ROC AUC (requires probabilities)
+rf_testing_probs <- rf_fit %>%
+  predict(new_data = stroke_testing, type = "prob") %>%
+  bind_cols(stroke_testing %>% select(stroke_yn))
+
+# Convert `stroke_yn` to a factor
+rf_testing_probs <- rf_testing_probs %>%
+  mutate(stroke_yn = as.factor(stroke_yn))
+
+# Check levels to ensure "Yes" and "No" are present
+levels(rf_testing_probs$stroke_yn)
+
+# Compute the ROC AUC
+roc_auc <- rf_testing_probs %>%
+  roc_auc(truth = stroke_yn, .pred_Yes)  # Assuming "Yes" is the positive class
+
+# Display ROC AUC result
+roc_auc
+
+```
+
+### Naive Bayes Classification
+
+```{r making an nb model}
+
+nb_model <- naive_bayes(stroke_yn ~ ., data = stroke_training, usekernel = T)
+plot(nb_model)
+
+```
+
+```{r fitting nb model on training data}
+
+# Predict probabilities on the training data
+nb_training_probs <- predict(nb_model, stroke_training, type = "prob")
+
+# Predict classes on the training data
+nb_training_preds <- predict(nb_model, stroke_training)
+
+# Confusion matrix for training data
+(tab2 <- table(Predicted = nb_training_preds, Actual = stroke_training$stroke_yn))
+
+# Calculate training error rate
+training_error_rate <- 1 - sum(diag(tab2)) / sum(tab2)
+training_error_rate
+
+# Evaluate ROC AUC on the training data
+
+
+# Convert training data predictions into a dataframe with actual values and predicted probabilities
+nb_training_results <- cbind(stroke_training, nb_training_probs)
+
+# Ensure stroke_yn is a factor
+nb_training_results <- nb_training_results %>%
+  mutate(stroke_yn = as.factor(stroke_yn))
+
+# Compute ROC AUC
+roc_auc <- nb_training_results %>%
+  roc_auc(truth = stroke_yn,Yes)  # Assuming "Yes" is the positive class
+
+# Display ROC AUC
+roc_auc
+
+```
+
+```{r making an object of the nb model on training data}
+p1 <- predict(nb_model, stroke_training)
+```
+
+```{r confusion matrix for nb model on training data}
+(tab1 <- table(p1, stroke_training$stroke_yn))
+```
+
+```{r accuracy of nb model}
+1 - sum(diag(tab1)) / sum(tab1)
+```
+
+Naives Bayes has an accuracy of 99.9% on the training data.
+
+```{r testing nb on testing data}
+
+# --- Extension to Testing Data ---
+
+# Predict probabilities on the testing data
+nb_testing_probs <- predict(nb_model, stroke_testing, type = "prob")
+
+# Predict classes on the testing data
+nb_testing_preds <- predict(nb_model, stroke_testing)
+
+# Confusion matrix for testing data
+(tab2 <- table(Predicted = nb_testing_preds, Actual = stroke_testing$stroke_yn))
+
+# Calculate testing error rate
+testing_error_rate <- 1 - sum(diag(tab2)) / sum(tab2)
+testing_error_rate
+
+# Evaluate ROC AUC on the testing data
+
+
+# Convert testing data predictions into a dataframe with actual values and predicted probabilities
+nb_testing_results <- cbind(stroke_testing, nb_testing_probs)
+
+# Ensure stroke_yn is a factor
+nb_testing_results <- nb_testing_results %>%
+  mutate(stroke_yn = as.factor(stroke_yn))
+
+# Compute ROC AUC
+roc_auc <- nb_testing_results %>%
+  roc_auc(truth = stroke_yn,Yes)  # Assuming "Yes" is the positive class
+
+# Display ROC AUC
+roc_auc
+
+```
+
+### K-Nearest Neighbor Classfication
+
+```{r ensuring there are no nas before doing knn, echo=FALSE}
+
+ff_glimpse(stroke_training)
+
+ff_glimpse(stroke_testing)
+
+#removing the 3 NAs from the work type variable#
+
+stroke_training <- stroke_training %>% filter(!is.na(work_type)) 
+
+stroke_testing <- stroke_testing %>% filter(!is.na(work_type))
+
+```
+
+```{r double checking there are no nas before doing knn, echo=FALSE}
+
+ff_glimpse(stroke_training)
+
+ff_glimpse(stroke_testing)
+
+```
+
+```{r making categorical variables numeric for knn}
+
+# Convert categorical variables into numeric format (one-hot encoding)
+stroke_training_numeric <- stroke_training %>%
+  # Convert categorical variables into numeric format (1-hot encoding)
+  mutate(
+    #gender = as.numeric(factor(gender)),
+    ever_married = as.numeric(factor(ever_married)),
+    work_type = as.numeric(factor(work_type)),
+    #residence_type = as.numeric(factor(residence_type)),
+    smoking_status = as.numeric(factor(smoking_status)),
+    # Convert stroke_yn to 1 for "Yes" and 0 for "No"
+    stroke_yn = ifelse(stroke_yn == "Yes", 1, 0)
+  )
+
+# Check the transformed data
+head(stroke_training_numeric)
+
+# Convert categorical variables into numeric format (one-hot encoding)
+stroke_testing_numeric <- stroke_testing %>%
+  # Convert categorical variables into numeric format (1-hot encoding)
+  mutate(
+    #gender = as.numeric(factor(gender)),
+    ever_married = as.numeric(factor(ever_married)),
+    work_type = as.numeric(factor(work_type)),
+    #residence_type = as.numeric(factor(residence_type)),
+    smoking_status = as.numeric(factor(smoking_status)),
+    # Convert stroke_yn to 1 for "Yes" and 0 for "No"
+    stroke_yn = ifelse(stroke_yn == "Yes", 1, 0)
+  )
+
+
+# Check the transformed data
+head(stroke_testing_numeric)
+```
+
+```{r Fitting KNN Model to training dataset}
+
+knn_model <- knn(
+  train = stroke_training_numeric,
+  test = stroke_testing_numeric,
+  cl = stroke_training_numeric$stroke_yn,
+  k = 19,
+  prob = TRUE
+)
+
+head(knn_model)
+
+```
+
+```{r cm for testing data}
+
+# Confusion Matrix
+cm <- table(stroke_testing_numeric$stroke_yn, knn_model)
+cm
+
+```
+
+```{r getting metrics for KNN model}
+
+# Confusion Matrix
+cm <- table(stroke_testing_numeric$stroke_yn, knn_model)
+print(cm)
+
+# Calculate Accuracy
+accuracy <- sum(diag(cm)) / sum(cm)
+cat("Accuracy:", accuracy, "\n")
+
+# Calculate Precision and Recall for 'Yes' (1, stroke) class
+precision_yes <- cm["1", "1"] / sum(cm[, "1"])
+recall_yes <- cm["1", "1"] / sum(cm["1", ])
+cat("Precision (Yes, 1):", precision_yes, "\n")
+cat("Recall (Yes, 1):", recall_yes, "\n")
+
+# Calculate F1 Score for 'Yes' (1) class
+f1_yes <- 2 * (precision_yes * recall_yes) / (precision_yes + recall_yes)
+cat("F1 Score (Yes, 1):", f1_yes, "\n")
+
+# Calculate Precision and Recall for 'No' (0, no stroke) class
+precision_no <- cm["0", "0"] / sum(cm[, "0"])
+recall_no <- cm["0", "0"] / sum(cm["0", ])
+cat("Precision (No, 0):", precision_no, "\n")
+cat("Recall (No, 0):", recall_no, "\n")
+
+# Calculate F1 Score for 'No' (0) class
+f1_no <- 2 * (precision_no * recall_no) / (precision_no + recall_no)
+cat("F1 Score (No, 0):", f1_no, "\n")
+
+```
+
+```{r auroc curve for knn model}
+
+attributes(knn_model)$prob
+
+roc(stroke_testing$stroke_yn, attributes(knn_model)$prob)
+
+plot(roc(stroke_testing$stroke_yn, attributes(knn_model)$prob),
+     print.thres = T,
+     print.auc=T)
+
+```
+
+```{r saving knn model to a .rds file}
+
+saveRDS(knn_model, "knn_model.rds")
+
+```
+
+
+## Prediction Modelling Part 2 - SMOTE-Balanced Classes (8.5% Stroke) {.tabset .tabset-fade .tabset-pills}
+
+```{r adding back in underweight bmi category before SMOTE}
+
+# Recode NA values to 'Underweight' in bmi_category
+stroke_data$bmi_category <- factor(stroke_data$bmi_category)  # Ensure bmi_category is a factor
+
+# Re-add 'Underweight' as a factor level (if it was removed during any processing)
+stroke_data$bmi_category <- factor(stroke_data$bmi_category, levels = c(levels(stroke_data$bmi_category), "Underweight"))
+
+
+stroke_data$bmi_category[is.na(stroke_data$bmi_category)] <- "Underweight"
+
+```
+
+```{r adding unknown as a factor level to work type variable}
+# Add 'Unknown' as a factor level to work_type to make it suitable for SMOTE#
+
+stroke_data$work_type <- factor(stroke_data$work_type, levels = c(levels(stroke_data$work_type), "Unknown"))
+
+stroke_data$work_type[is.na(stroke_data$work_type)] <- "Unknown"
+```
+
+```{r checking the missingness of the stroke data df}
+
+ff_glimpse(stroke_training)
+
+```
+
+```{r SMOTE to get stroke yes rate to 8.5%}
+
+# Apply SMOTE
+# stroke_data_balanced <- SMOTE(stroke_yn ~ ., data = stroke_data)  
+# 
+# table(stroke_data_balanced$stroke_yn)
+
+```
+
+```{r one hot encoding stroke data in X df to be suitable for SMOTE function}
+
+# Convert categorical columns to numeric (e.g., using one-hot encoding)
+# If you have factor columns, convert them into dummy variables using model.matrix
+X <- stroke_training[, !names(stroke_training) %in% "stroke"]  # Exclude target variable
+
+X <- X %>% select(-stroke_yn)
+
+X$gender <- as.factor(X$gender)
+
+X$ever_married <- as.factor(X$ever_married)
+
+
+
+# Convert factors into numeric columns (one-hot encoding)
+X <- data.frame(lapply(X, function(x) {
+  if (is.factor(x)) {
+    as.numeric(factor(x))  # Convert factors to numeric
+  } else {
+    x  # Keep numeric columns as they are
+  }
+}))
+
+# Now check if all columns are numeric
+str(X)
+
+# Prepare target variable
+target <- stroke_training$stroke  # The target variable (should already be numeric or a factor)
+
+# Ensure target is a factor or numeric
+target <- as.numeric(target)
+
+head(target)
+
+```
+
+```{r using the SMOTE function to balance outcome variable}
+
+# Define target count for 'Yes' cases
+total_size <- 4253  # Desired total dataset size
+target_yes <- round(0.085 * total_size)  # 8.5% of 4253 → 361 'Yes' cases
+
+# Apply SMOTE to oversample 'Yes' cases
+# K = Number of nearest neighbors to use when generating synthetic samples
+# Higher K → synthetic points are more spread out, using a larger neighborhood
+# Lower K → synthetic points are closer to existing minority points, staying more compact
+smote_result <- SMOTE(X, target, K = 5, dup_size = 20)  # dup_size controls oversampling
+
+# Extract synthetic and original data
+
+oversampled_data <- as.data.frame(smote_result$data)
+colnames(oversampled_data)[ncol(oversampled_data)] <- "stroke"  # Rename target column
+
+oversampled_data$stroke <- as.numeric(as.character(oversampled_data$stroke))
+
+# Separate 'Yes' and 'No' cases
+stroke_yes <- oversampled_data[oversampled_data$stroke == 1, ]
+stroke_no <- oversampled_data[oversampled_data$stroke == 0, ]
+
+# Ensure we only keep the required 'Yes' cases
+stroke_yes_final <- stroke_yes[1:target_yes, ]  # Keep only the first 361 'Yes' cases
+
+# Calculate how many 'No' cases to keep
+num_no_to_keep <- total_size - target_yes  # Ensure total remains 4,253
+
+# Randomly sample 'No' cases to balance the dataset
+set.seed(123)  # For reproducibility
+stroke_no_sampled <- stroke_no[sample(nrow(stroke_no), num_no_to_keep, replace = FALSE), ]
+
+# Combine the new balanced dataset
+balanced_data <- rbind(stroke_yes_final, stroke_no_sampled)
+
+# Check distribution
+table(balanced_data$stroke)
+
+```
+
+```{r checking that all the original Stroke cases are present in the post SMOTE Stroke IDs }
+
+#Obtaining the original Stroke cases from stroke_data#
+stroke_yes <- stroke_data[stroke_data$stroke_yn == "Yes", ]
+
+original_stroke_ids <- stroke_yes$id
+
+original_stroke_ids <- as.integer(original_stroke_ids)
+
+
+#Obtaining the post-SMOTE Stroke cases from balanced_data#
+stroke_yes_post_smote <- balanced_data[balanced_data$stroke == 1, ]
+
+post_smote_stroke_ids <- stroke_yes_post_smote$id
+
+#removing decimal places#
+post_smote_stroke_ids <- as.integer(post_smote_stroke_ids)
+
+#Using all() check the original IDs are still present#
+all(original_stroke_ids %in% post_smote_stroke_ids)
+
+```
+
+```{r checking the data}
+
+ff_glimpse(balanced_data)
+
+```
+
+```{r}
+
+# Step 1: Check for duplicates in the IDs
+post_smote_stroke_ids <- unique(post_smote_stroke_ids)  # Remove duplicates from post_SMOTE IDs
+original_stroke_ids <- unique(original_stroke_ids)  # Remove duplicates from original IDs
+
+# Create a new dataframe for new stroke cases
+new_stroke_cases_df <- data.frame(
+  id = post_smote_stroke_ids, 
+  stroke_yn = "Yes"  # Set stroke_yn to "Yes" for the new stroke cases
+)
+
+# Merge new stroke cases with original stroke data
+stroke_data_updated <- stroke_data %>%
+  left_join(new_stroke_cases_df, by = "id", suffix = c("", "_new")) %>%
+  mutate(stroke_yn = if_else(!is.na(stroke_yn_new), "Yes", stroke_yn)) %>%
+  select(-stroke_yn_new)  # Drop the temporary column
+
+# Check the result
+table(stroke_data_updated$stroke_yn)
+
+```
+
+## Building a Shiny App
+
+```{r shiny code}
+# Create a RShiny UI
+shinyUI(
+  fluidPage(theme = shinytheme("superhero"), padding=5,
+  titlePanel("Stroke Prediction Application"), 
+  # Create a side-bar layout
+  sidebarLayout(
+    # Create a side bar to for user input
+   
+    sidebarPanel(
+      h4("Fill in Your details and click on Submit for a Prediction"),
+      actionButton("predictButton", "Submit for a Prediction"),
+      selectInput(inputId="gender", "Select Gender", choices = c("Female", "Male"), selected = "Male"),
+      sliderInput("age", "Select Your Age:",
+                  min = 18, max = 82,
+                  value = 40),
+      selectInput(inputId="hypertension_yn", "Do you have hypertension?", choices = c("No", "Yes"), selected = "No"),
+      selectInput(inputId="heart_disease_yn", "Do you have heart disease?", choices = c("No", "Yes"), selected = "No"),
+      selectInput(inputId="ever_married", "Are You Married?", choices = c("No","Yes"), selected = "No"),
+      selectInput(inputId="work_type", "What is your job status", choices = c("Private", "Self.employed", "Govt_job", "children", "Never_worked"), selected = "Private"),
+      selectInput(inputId="Residence_type", "Where do you live", choices = c("Urban", "Rural"), selected = "Urban"),
+      sliderInput("bmi", "Your BMI:",
+                  min = 10, max = 98,
+                  value = 30),
+      selectInput(inputId="smoking_status", "What is your current Smoking Status?", choices = c("formerly.smoked", "never.smoked", "smokes", "Unknown"), selected = "never.smoked"
+                  )),
+    mainPanel(
+      h3("Stroke prediction result, 1 for stroke and 0 for no stroke"),
+      textOutput("predictionText"),
+      plotOutput("Age_dis")
+    )
+
+    )
+))
+```
