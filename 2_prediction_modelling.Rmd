@@ -16,7 +16,7 @@ pacman::p_load(tidyverse,knitr,kableExtra,finalfit,lubridate,data.table,
                scales,RColorBrewer,GGally,DT,gtsummary,cardx,
                ggsurvfit,patchwork,rsample,parsnip,recipes,workflows,tune,
                ranger,yardstick,vip,tidymodels,naivebayes,class,Metrics,shiny,
-               shinythemes,pROC,DMwR,smotefamily)
+               shinythemes,pROC,smotefamily)
 
 ```
 
@@ -337,7 +337,7 @@ roc_auc
 
 ```
 
-### K-Nearest Neighbor Classfication
+### K-Nearest Neighbor Classification
 
 ```{r ensuring there are no nas before doing knn, echo=FALSE}
 
@@ -460,6 +460,145 @@ saveRDS(knn_model, "knn_model.rds")
 
 ```
 
+### Logistic Regression 
+
+```{r Generating and training logistic regression model on training data}
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Create a cross-validation object for 5-fold cross-validation
+stroke_cv <- vfold_cv(stroke_training, v = 5)
+
+# Define the logistic regression model
+log_model <- 
+  logistic_reg() %>%
+  set_engine("glm") %>%
+  set_mode("classification")
+
+# Specify the recipe for preprocessing (outcome ~ predictors)
+stroke_recipe <- 
+  recipe(stroke_yn ~ ., data = stroke_training)
+
+# Combine the recipe and model into a workflow
+log_workflow <- 
+  workflow() %>%
+  add_recipe(stroke_recipe) %>%
+  add_model(log_model)
+
+# Fit the logistic regression workflow on the training data
+log_fit <- 
+  log_workflow %>%
+  fit(data = stroke_training)
+
+```
+
+```{r training the log regression model}
+
+# Predict the outcomes on the training data
+log_training_results <- log_fit %>%
+  predict(new_data = stroke_training) %>%
+  bind_cols(
+    log_fit %>% predict(new_data = stroke_training, type = "prob"),
+    stroke_training %>% select(stroke_yn)
+  ) %>%
+  mutate(truth = stroke_yn)
+
+# View the first few rows of the training results
+head(log_training_results)
+
+
+# Count how many predictions fall into each category
+log_training_results %>% count(.pred_class, truth)
+
+#Confusion matrix results
+confusion_matrix <- log_training_results %>%
+  conf_mat(truth = stroke_yn, estimate = .pred_class)
+
+confusion_matrix
+
+```
+
+
+```{r looking at the log regression model coefficients}
+
+# Extract model coefficients
+log_coefs <- log_fit %>%
+  extract_fit_parsnip() %>%
+  tidy()
+
+# View coefficients
+log_coefs
+
+```
+
+```{r testing dataset prediction}
+
+# Predict on the testing dataset
+log_testing_results <- log_fit %>%
+  predict(new_data = stroke_testing) %>%
+  bind_cols(
+    stroke_testing %>% select(stroke_yn)
+  )
+
+# View first few rows
+head(log_testing_results)
+
+# Convert both truth and estimate to factors with the same levels
+log_testing_results <- log_testing_results %>%
+  mutate(
+    stroke_yn = as.factor(stroke_yn),
+    .pred_class = as.factor(.pred_class)
+  )
+
+levels(log_testing_results$stroke_yn) <- levels(log_testing_results$.pred_class)
+
+# Compute confusion matrix
+confusion_matrix <- log_testing_results %>%
+  conf_mat(truth = stroke_yn, estimate = .pred_class)
+
+# View confusion matrix
+confusion_matrix
+
+# Accuracy
+accuracy <- log_testing_results %>%
+  metrics(truth = stroke_yn, estimate = .pred_class) %>%
+  filter(.metric == "accuracy")
+
+accuracy
+
+# Precision, Recall, F1 Score, etc.
+classification_metrics <- log_testing_results %>%
+  metrics(truth = stroke_yn, estimate = .pred_class)
+
+classification_metrics
+
+```
+
+
+```{r log regression on test data}
+
+# Generate test probabilities
+log_testing_probs <- log_fit %>%
+  predict(new_data = stroke_testing, type = "prob") %>%
+  bind_cols(stroke_testing %>% select(stroke_yn))
+
+# Convert stroke_yn to a factor
+log_testing_probs <- log_testing_probs %>%
+  mutate(stroke_yn = as.factor(stroke_yn))
+
+# Check levels to ensure "Yes" and "No" are present
+levels(log_testing_probs$stroke_yn)
+
+# Compute ROC AUC
+roc_auc_log <- log_testing_probs %>%
+  roc_auc(truth = stroke_yn, .pred_Yes)
+
+# Display ROC AUC result
+roc_auc_log
+
+
+```
 
 
 ### Evaluating and Selecting Models
