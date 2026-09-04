@@ -99,3 +99,5 @@ I've planned the analysis using the following resources:
 * The unsurpassable survival analysis tutorial of Dr Emily Zabor - https://www.emilyzabor.com/tutorials/survival_analysis_in_r_tutorial.html
   
 * The example survival analysis of research biostatiscian Mr Jacky Choi - https://jmc2392.github.io/survival.html
+
+* Kaggle users' code on the same dataset - https://www.kaggle.com/code/qasimalhammad/build-and-deploy-a-stroke-prediction-model-using-r#task-two-build-prediction-models
